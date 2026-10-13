@@ -1,0 +1,18 @@
+# 开发过程产物：截图（占 31MB 中绝大部分）
+shots/
+
+# 依赖与缓存
+node_modules/
+.cache/
+
+# 测试日志
+tests/*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编辑器
+.vscode/
+.idea/

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#101733">
+  <title>雅 · 麻将 — 大众四人麻将</title>
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="13" fill="%23101733"/><rect x="6" y="6" width="52" height="52" rx="10" fill="none" stroke="%23c9a35f" stroke-width="2.5"/><rect x="16.5" y="14" width="31" height="36" rx="5" fill="%23f7f1e1" stroke="%23c9a35f" stroke-width="2"/><text x="32" y="43" text-anchor="middle" font-size="27" font-family="serif" font-weight="700" fill="%23b0301f">中</text></svg>'>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 顶栏 -->
+    <header id="topbar">
+      <div class="brand"><span class="brand-mark">🀄</span><span class="brand-name">雅麻将</span></div>
+      <div class="round-info">
+        <span id="round-name" class="round-name">东一局</span>
+        <span id="wall-count" class="wall-count">牌山 122</span>
+      </div>
+      <div class="top-actions">
+        <button id="btn-sound" class="icon-btn" type="button" title="音效开关">🔊</button>
+        <button id="btn-rules" class="icon-btn" type="button" title="玩法规则">📖</button>
+        <button id="btn-restart" class="icon-btn" type="button" title="重新开局">🔄</button>
+      </div>
+    </header>
+
+    <!-- 牌桌 -->
+    <main id="table">
+      <div id="table-felt"></div>
+      <section id="seat-2" class="seat seat-top"></section>
+      <section id="seat-3" class="seat seat-left"></section>
+      <section id="seat-1" class="seat seat-right"></section>
+      <section id="center">
+        <!-- 四家各自的出牌区（牌河）：n=对家 w=左家 e=右家 s=我，环绕中央局势铭牌 -->
+        <div id="rivers">
+          <div id="river-2" class="river river-n" aria-label="对家牌河"></div>
+          <div id="river-3" class="river river-w" aria-label="左家牌河"></div>
+          <div id="center-plaque">
+            <span class="cp-mark cp-n" id="cpm-2">北</span>
+            <span class="cp-mark cp-w" id="cpm-3">西</span>
+            <div class="cp-core">
+              <div class="cp-wind" id="cp-wind">东</div>
+              <div class="cp-round" id="cp-round">东一局</div>
+              <div class="cp-wall" id="cp-wall">余 83 张</div>
+            </div>
+            <span class="cp-mark cp-e" id="cpm-1">东</span>
+            <span class="cp-mark cp-s hot" id="cpm-0">南</span>
+          </div>
+          <div id="river-1" class="river river-e" aria-label="右家牌河"></div>
+          <div id="river-0" class="river river-s" aria-label="我的牌河"></div>
+        </div>
+        <div id="turn-banner"></div>
+      </section>
+      <section id="me">
+        <div id="me-panel" class="panel">
+          <div id="me-info" class="seat-info"></div>
+          <div id="my-melds" class="melds"></div>
+        </div>
+        <div id="my-hand" class="hand"></div>
+      </section>
+      <!-- 吃 / 碰 / 杠 / 胡 浮字 -->
+      <div id="action-flash"></div>
+    </main>
+
+    <!-- 操作栏 -->
+    <div id="action-bar" class="hidden"></div>
+    <div id="toast" class="hidden"></div>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script src="js/tiles.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

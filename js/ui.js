@@ -1,0 +1,636 @@
+/**
+ * ui.js — 界面渲染、动画、交互与弹窗
+ * 依赖全局 MJ（牌面 SVG/音效）、MJEngine（赔率表/金币）与 controller（对局控制器）
+ */
+(function (global) {
+  'use strict';
+  const MJ = global.MJ;
+
+  const SEAT_INFO = [
+    { name: '你', avatar: '我', color: '#e9c063' },
+    { name: '小龙', avatar: '龙', color: '#7fb8e8' },
+    { name: '阿秀', avatar: '秀', color: '#e8897a' },
+    { name: '老陈', avatar: '陈', color: '#86d99a' },
+  ];
+  const WIND_NAMES = ['东', '南', '西', '北'];
+  const SEAT_DOM = { 1: 'seat-1', 2: 'seat-2', 3: 'seat-3' };
+  const delay = (ms) => new Promise(r => setTimeout(r, ms));
+
+  /** 千分位金币：5000 → 5,000 */
+  function fmtCoins(n) {
+    const v = Math.round(n) || 0;
+    const s = String(Math.abs(v));
+    return (v < 0 ? '-' : '') + s.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+  /** 席位面板用紧凑写法：500000 → 50万 */
+  function coinShort(n) {
+    const v = Math.round(n) || 0;
+    if (Math.abs(v) < 100000) return fmtCoins(v);
+    const w = v / 10000;
+    return (Math.abs(w - Math.round(w)) < 0.05 ? Math.round(w).toString() : w.toFixed(1)) + '万';
+  }
+
+  class UI {
+    constructor(controller) {
+      this.ctrl = controller;
+      this.engine = controller.engine;
+      this.sound = new MJ.Sound();
+      this.selectedTile = null;
+      this.freshTile = null;      // 刚摸到的那张（用于金色高亮，不随重渲染重复播放动画）
+      this.handClickResolve = null;
+      this.actionResolve = null;
+      this.actionTimer = null;
+      this.riverCount = 0;
+      this.$ = (id) => document.getElementById(id);
+    }
+
+    /* ================= 基础元素 ================= */
+    tileEl(t, opts = {}) {
+      const d = document.createElement('div');
+      d.className = 'tile' + (opts.small ? ' sm' : '') + (opts.cls ? ' ' + opts.cls : '');
+      d.innerHTML = opts.back ? MJ.backFace(opts.orient || '') : MJ.tileFaceSVG(t);
+      if (!opts.back) d.dataset.tile = String(t);
+      return d;
+    }
+    el(tag, cls, html) {
+      const d = document.createElement(tag);
+      if (cls) d.className = cls;
+      if (html !== undefined) d.innerHTML = html;
+      return d;
+    }
+
+    /* ================= 整手渲染 ================= */
+    renderAll() {
+      this.renderTopbar();
+      this.renderMySeat();
+      for (let pid = 1; pid <= 3; pid++) this.renderAISeat(pid);
+      this.renderRivers();
+      this.setTurn(this.engine.turn);
+    }
+
+    renderTopbar() {
+      this.$('round-name').textContent = this.engine.roundName;
+      const left = this.engine.wall.length + this.engine.dead.length;
+      this.$('wall-count').textContent = '牌山 ' + left;
+      // 中央铭牌：场风 + 局数 + 余张 + 四家座风
+      const wind = ['东', '南'][this.engine.prevailingWind] || '东';
+      const cw = this.$('cp-wind'); if (cw) cw.textContent = wind;
+      const cr = this.$('cp-round'); if (cr) cr.textContent = this.engine.roundName;
+      const cwl = this.$('cp-wall'); if (cwl) cwl.textContent = '余 ' + left + ' 张';
+      for (let pid = 0; pid < 4; pid++) {
+        const m = this.$('cpm-' + pid);
+        if (m) m.textContent = WIND_NAMES[this.engine.players[pid].wind];
+      }
+    }
+
+    badge(text, cls) { return `<span class="badge ${cls || ''}">${text}</span>`; }
+
+    seatInfoHTML(p) {
+      const s = SEAT_INFO[p.id];
+      const wind = WIND_NAMES[p.wind];
+      let meta = this.badge(wind + '风', 'wind') + (p.dealer ? this.badge('庄', 'dealer') : '');
+      if (p.id === 0 && this.engine.isTenpai(p)) meta += this.badge('听', 'tenpai');
+      return `
+        <div class="seat-info">
+          <div class="avatar" style="background:${s.color}">${s.avatar}</div>
+          <div class="seat-text">
+            <span class="seat-name">${s.name}</span>
+            <span class="seat-meta"><span class="seat-score">${coinShort(p.score)}</span>${meta}</span>
+          </div>
+        </div>`;
+    }
+
+    /**
+     * 副露（吃 / 碰 / 杠）：摆在该玩家身旁。
+     * 被鸣的那张（来自他家弃牌）加金框标记，一眼看清是从谁那里吃碰来的。
+     */
+    meldEl(m, small) {
+      const g = this.el('div', 'meld');
+      let marked = false;
+      m.tiles.forEach(t => {
+        const claimed = !marked && m.from >= 0 && t === m.tile;
+        if (claimed) marked = true;
+        g.appendChild(this.tileEl(t, { small, cls: claimed ? 'claimed' : '' }));
+      });
+      return g;
+    }
+
+    renderMySeat() {
+      const p = this.engine.players[0];
+      this.$('me-info').innerHTML = this.seatInfoHTML(p);
+      const meldsBox = this.$('my-melds');
+      meldsBox.innerHTML = '';
+      p.melds.forEach(m => meldsBox.appendChild(this.meldEl(m, true)));
+      this.renderMyHand();
+    }
+
+    /**
+     * 渲染手牌
+     * @param {Object} opts { animate: 逐张进场, freshAnimate: 最新摸到的牌播放位移入场 }
+     * 规则：只有真正新摸到的牌带一次性入场动画；`last-drawn` 只做静态金环，
+     *       因此后续任何一次重渲染都不会再触发位移，彻底消除“整手牌抖动”。
+     */
+    renderMyHand(opts = {}) {
+      const p = this.engine.players[0];
+      const box = this.$('my-hand');
+      box.innerHTML = '';
+      let freshIdx = -1;
+      if (this.freshTile !== null && this.freshTile !== undefined) {
+        for (let i = p.hand.length - 1; i >= 0; i--) if (p.hand[i] === this.freshTile) { freshIdx = i; break; }
+      }
+      p.hand.forEach((t, i) => {
+        const el = this.tileEl(t, { cls: 'playable' });
+        if (opts.animate) {
+          el.style.animation = 'deal-in .32s both';
+          el.style.animationDelay = (i * 0.035).toFixed(3) + 's';
+        }
+        if (i === freshIdx) {
+          el.classList.add('last-drawn');
+          if (opts.freshAnimate) el.classList.add('just-drawn');
+        }
+        el.addEventListener('click', () => this.onHandTileClick(t, el));
+        el.addEventListener('dblclick', () => this.resolveHandDiscard(t));
+        box.appendChild(el);
+      });
+      this.selectedTile = null;
+    }
+
+    renderAISeat(pid) {
+      const p = this.engine.players[pid];
+      const box = this.$(SEAT_DOM[pid]);
+      const isTop = pid === 2;
+      const panel = this.el('div', 'panel');
+      panel.id = 'panel-' + pid;
+      if (this.engine.turn === pid) panel.classList.add('active');
+
+      const info = this.el('div');
+      info.innerHTML = this.seatInfoHTML(p);
+
+      // 牌墙：对家横排、左右家竖排（牌背横置，模拟桌沿视角）
+      const backs = this.el('div', 'seat-backs ' + (isTop ? 'h' : 'v'));
+      for (let i = 0; i < p.hand.length; i++) backs.appendChild(this.tileEl(0, { back: true, orient: isTop ? '' : 'side' }));
+
+      // 副露摆在手牌与桌心之间，形成「身份 → 手牌 → 副露 → 牌河」的空间顺序
+      const melds = this.el('div', isTop ? 'melds' : 'side-melds');
+      p.melds.forEach(m => melds.appendChild(this.meldEl(m, true)));
+
+      panel.appendChild(info);
+      panel.appendChild(backs);
+      if (p.melds.length) panel.appendChild(melds);
+
+      box.innerHTML = '';
+      box.appendChild(panel);
+    }
+
+    /**
+     * 四家各自的出牌区：每家正前方一块，互不混放。
+     * 全桌最新一张弃牌带悬浮光标；只有新落的牌播放入场动画（重渲染不重播）。
+     */
+    renderRivers(opts = {}) {
+      const seen = this._riverSeen || (this._riverSeen = [0, 0, 0, 0]);
+      const cursorPid = (this.engine.lastDiscarder !== null && this.engine.lastDiscarder >= 0)
+        ? this.engine.lastDiscarder : -1;
+
+      for (let pid = 0; pid < 4; pid++) {
+        const box = this.$('river-' + pid);
+        if (!box) continue;
+        const tiles = this.engine.players[pid].discards;
+        box.innerHTML = '';
+        tiles.forEach((t, i) => {
+          const el = this.tileEl(t, { small: true });
+          if (opts.animate !== false && i >= seen[pid]) el.classList.add('drop-in');
+          if (pid === cursorPid && i === tiles.length - 1) el.classList.add('cursor');
+          box.appendChild(el);
+        });
+        seen[pid] = tiles.length;
+      }
+    }
+
+    setTurn(pid) {
+      for (let i = 1; i <= 3; i++) {
+        const panel = this.$('panel-' + i);
+        if (panel) panel.classList.toggle('active', i === pid);
+      }
+      // 中央铭牌上高亮当前行动家（座风字点亮）
+      for (let i = 0; i < 4; i++) {
+        const m = this.$('cpm-' + i);
+        if (m) m.classList.toggle('hot', i === pid);
+      }
+      const s = SEAT_INFO[pid];
+      this.$('turn-banner').textContent = pid === 0 ? '轮到你出牌' : `轮到 ${s.name} 出牌`;
+    }
+
+    /* ================= 浮字（吃 / 碰 / 杠 / 胡） ================= */
+    flash(text, kind) {
+      const el = this.$('action-flash');
+      if (!el) return;
+      el.textContent = text;
+      el.className = 'k-' + kind;
+      void el.offsetWidth;             // 强制重排，保证动画可重复触发
+      el.classList.add('show');
+      clearTimeout(this._flashTimer);
+      this._flashTimer = setTimeout(() => el.classList.remove('show'), 960);
+    }
+
+    /* ================= 动画 ================= */
+    /** 发牌：全量渲染一次，随后手牌逐张轻落（无缩放、无回弹），不再二次重渲染造成跳动 */
+    async animateDeal() {
+      this.freshTile = null;
+      this.riverCount = 0;
+      this._riverSeen = [0, 0, 0, 0];
+      this.renderAll();
+      this.renderRivers({ animate: false });
+      this.renderMyHand({ animate: true });
+      this.sound.deal();
+      await delay(640);
+    }
+
+    /** 摸牌：仅最新一张做一次干净的位移入场 + 金环高亮 */
+    async animateDraw(pid, tile) {
+      if (pid === 0) {
+        this.freshTile = tile;
+        this.renderMySeat();
+        this.renderMyHand({ freshAnimate: true });
+      } else {
+        this.renderAISeat(pid);
+      }
+      this.sound.clack();
+      await delay(200);
+    }
+
+    animateDiscard(pid, tile) {
+      if (pid === 0) this.freshTile = null;
+      this.renderRivers();
+      this.renderTopbar();
+      if (pid === 0) this.renderMySeat();
+      else this.renderAISeat(pid);
+      this.sound.clack();
+    }
+
+    /** 鸣牌：音效（合成撞击 + 女声喊牌）与浮字同步动作 */
+    async animateClaim(pid, kind) {
+      const text = { chi: '吃', pong: '碰', kong: '杠' }[kind] || '碰';
+      if (kind === 'chi') this.sound.chi();
+      else if (kind === 'pong') this.sound.pong();
+      else this.sound.kong();
+      this.flash(text, kind);
+      if (pid === 0) this.renderMySeat(); else this.renderAISeat(pid);
+      await delay(430);
+    }
+
+    /* ================= 交互：我的弃牌 ================= */
+    onHandTileClick(t, el) {
+      if (!this.handClickResolve) return; // 非本人回合忽略点击
+      this.sound.tick();
+      if (this.selectedTile === t) {
+        this.resolveHandDiscard(t);
+        return;
+      }
+      const box = this.$('my-hand');
+      box.querySelectorAll('.tile.selected').forEach(e => e.classList.remove('selected'));
+      el.classList.add('selected');
+      this.selectedTile = t;
+    }
+
+    resolveHandDiscard(t) {
+      if (!this.handClickResolve) return;
+      const resolve = this.handClickResolve;
+      this.handClickResolve = null;
+      this.selectedTile = null;
+      resolve(t);
+    }
+
+    /** 等待玩家点击手牌弃牌 */
+    askDiscard() {
+      this.showHint('点击手牌出牌（双击快速出牌）');
+      return new Promise(resolve => { this.handClickResolve = resolve; });
+    }
+
+    /* ================= 操作栏 ================= */
+    showHint(text) {
+      this.$('turn-banner').textContent = text;
+    }
+
+    showActions(buttons, timeoutSec) {
+      const bar = this.$('action-bar');
+      bar.innerHTML = '';
+      let remain = timeoutSec || 0;
+      const countEl = remain ? this.el('span', 'act-count', remain + 's') : null;
+      buttons.forEach(b => {
+        const btn = this.el('button', 'act-btn ' + (b.cls || ''));
+        btn.type = 'button';
+        btn.innerHTML = b.label + (b.sub ? `<span class="sub">${b.sub}</span>` : '');
+        btn.addEventListener('click', () => {
+          this.sound.tick();
+          this.clearActionTimer();
+          this.hideActions();
+          if (this.actionResolve) {
+            const r = this.actionResolve;
+            this.actionResolve = null;
+            r(b.value);
+          }
+        });
+        bar.appendChild(btn);
+      });
+      if (remain) {
+        const first = bar.querySelector('.act-btn');
+        if (first && countEl) first.appendChild(countEl);
+        this.actionTimer = setInterval(() => {
+          remain--;
+          if (countEl) countEl.textContent = remain + 's';
+          if (remain <= 0) {
+            this.clearActionTimer();
+            this.hideActions();
+            if (this.actionResolve) {
+              const r = this.actionResolve;
+              this.actionResolve = null;
+              r(null);
+            }
+            this.toast('超时，自动跳过');
+          }
+        }, 1000);
+      }
+      bar.classList.remove('hidden');
+    }
+
+    clearActionTimer() {
+      if (this.actionTimer) { clearInterval(this.actionTimer); this.actionTimer = null; }
+    }
+
+    hideActions() {
+      this.$('action-bar').classList.add('hidden');
+      this.clearActionTimer();
+    }
+
+    /** 通用操作询问，返回 Promise<value|null> */
+    ask(buttons, timeoutSec) {
+      return new Promise(resolve => {
+        this.actionResolve = resolve;
+        this.showActions(buttons, timeoutSec);
+      });
+    }
+
+    /* ================= 交互：鸣牌询问 ================= */
+    async askClaim(pid, options) {
+      this.showHint('请选择动作（不选将自动跳过）');
+      const buttons = [];
+      const win = options.find(o => o.type === 'win');
+      if (win) buttons.push({ label: '和', cls: 'win', value: win });
+      const kong = options.find(o => o.type === 'kong');
+      if (kong) buttons.push({ label: '杠', value: kong });
+      const pong = options.find(o => o.type === 'pong');
+      if (pong) buttons.push({ label: '碰', value: pong });
+      const chi = options.find(o => o.type === 'chi');
+      if (chi) {
+        chi.combos.forEach(c => {
+          buttons.push({ label: '吃', sub: this.comboText(c), value: { ...chi, combo: c } });
+        });
+      }
+      buttons.push({ label: '过', cls: 'pass', value: null });
+      return this.ask(buttons, 10);
+    }
+
+    /** 吃牌组合的展示文本：组成顺子的三张牌 */
+    comboText(combo) {
+      const idxs = [this.engine.lastDiscard, ...combo].sort((a, b) => a - b);
+      return idxs.map(i => MJ.tileName(i)).join(' ');
+    }
+
+    /** 自摸和牌询问 */
+    askSelfDraw() {
+      this.showHint('可以和牌！请选择');
+      return this.ask([
+        { label: '和 牌', cls: 'win', value: true },
+        { label: '不 和', cls: 'pass', value: false },
+      ], 10);
+    }
+
+    /** 自己回合的杠选择 */
+    async askKong(kongOptions) {
+      this.showHint('可以杠牌，请选择');
+      const buttons = kongOptions.map(k => ({
+        label: k.kind === 'concealed' ? '暗 杠' : '加 杠',
+        sub: MJ.tileName(k.tile),
+        value: k,
+      }));
+      buttons.push({ label: '不 杠', cls: 'pass', value: null });
+      return this.ask(buttons, 8);
+    }
+
+    /** 抢杠询问 */
+    askRobKong(tile) {
+      this.showHint('可以抢杠和牌！');
+      return this.ask([
+        { label: '抢杠和牌', cls: 'win', sub: MJ.tileName(tile), value: true },
+        { label: '过', cls: 'pass', value: false },
+      ], 10);
+    }
+
+    /* ================= 弹窗 ================= */
+    openModal(contentNode) {
+      const root = this.$('modal-root');
+      root.innerHTML = '';
+      const mask = this.el('div', 'modal-mask');
+      const modal = this.el('div', 'modal');
+      modal.appendChild(contentNode);
+      mask.appendChild(modal);
+      root.appendChild(mask);
+      return { mask, modal };
+    }
+    closeModal() { this.$('modal-root').innerHTML = ''; }
+
+    /** 金币数字滚动 */
+    countUp(node, target, dur) {
+      if (!node) return;
+      const D = dur || 900;
+      const raf = (typeof requestAnimationFrame === 'function')
+        ? requestAnimationFrame
+        : (fn) => setTimeout(() => fn(Date.now()), 16);
+      const t0 = Date.now();
+      const step = () => {
+        const k = Math.min(1, (Date.now() - t0) / D);
+        const eased = 1 - Math.pow(1 - k, 3);
+        node.textContent = fmtCoins(Math.round(target * eased));
+        if (k < 1) raf(step);
+      };
+      raf(step);
+    }
+
+    winHandNodes(p, winTile, isSeven) {
+      const box = this.el('div', 'win-hand-box');
+      box.appendChild(this.el('div', 'label', '和 牌 牌 型'));
+      const row = this.el('div', 'win-tiles');
+      p.melds.forEach(m => {
+        const g = this.el('div', 'meld');
+        m.tiles.forEach(t => g.appendChild(this.tileEl(t, { small: true })));
+        row.appendChild(g);
+      });
+      const hand = p.hand.concat([winTile]).sort((a, b) => a - b);
+      hand.forEach(t => row.appendChild(this.tileEl(t, { small: true, cls: t === winTile ? 'win-tile' : '' })));
+      box.appendChild(row);
+      return box;
+    }
+
+    /**
+     * 结算弹窗（金币制）
+     * 清晰展示：底注 / 各牌型倍率 / 合计倍率 / 每家支付 / 最终赢得金额 / 各家金币变化
+     */
+    showSettlement(data) {
+      return new Promise(resolve => {
+        const { winner, selfDraw, fromDiscard, result, winTile } = data;
+        const w = this.engine.players[winner];
+        const node = document.createDocumentFragment();
+        node.appendChild(this.el('h2', '', selfDraw ? '自 摸' : '和 牌'));
+        const fromTxt = selfDraw ? '自摸和牌' : `由 ${SEAT_INFO[fromDiscard] ? SEAT_INFO[fromDiscard].name : '对家'} 放炮`;
+        node.appendChild(this.el('div', 'subtitle',
+          `${SEAT_INFO[winner].name} ${fromTxt}　·　合计倍率 ×${result.totalMult}`));
+        node.appendChild(this.winHandNodes(w, winTile, result.isSeven));
+
+        // 赔率明细
+        const table = this.el('table', 'fan-table');
+        result.fans.forEach(f => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${f.name}${f.desc ? `<span class="desc">${f.desc}</span>` : ''}</td><td>×${f.mult}</td>`;
+          table.appendChild(tr);
+        });
+        const tr = document.createElement('tr');
+        tr.className = 'total';
+        tr.innerHTML = `<td>合计倍率</td><td>×${result.totalMult}</td>`;
+        table.appendChild(tr);
+        node.appendChild(table);
+
+        // 金币结算板
+        const board = this.el('div', 'coin-board');
+        board.innerHTML =
+          `<div class="coin-line"><span>底注</span><b>${fmtCoins(result.baseBet)}</b></div>` +
+          `<div class="coin-line"><span>合计倍率</span><b>×${result.totalMult}</b></div>` +
+          `<div class="coin-line"><span>${selfDraw ? '每家支付（三家）' : '放炮者支付'}</span><b>${fmtCoins(result.perPayer)}</b></div>` +
+          `<div class="coin-line win"><span>本局赢得</span><b id="win-coin">0</b><span class="unit">金币</span></div>`;
+        node.appendChild(board);
+
+        // 各家金币变化
+        const scoreBox = this.el('div');
+        data.payments.forEach(pay => {
+          const p = this.engine.players[pay.player];
+          const row = this.el('div', 'score-row');
+          const cls = pay.delta > 0 ? 'plus' : (pay.delta < 0 ? 'minus' : '');
+          const sign = pay.delta > 0 ? '+' : '';
+          row.innerHTML = `
+            <span class="who"><span class="avatar" style="background:${SEAT_INFO[p.id].color};width:24px;height:24px;font-size:11px">${SEAT_INFO[p.id].avatar}</span>${SEAT_INFO[p.id].name}</span>
+            <span class="delta ${cls}">${pay.delta === 0 ? '—' : sign + fmtCoins(pay.delta)}（${fmtCoins(p.score)}）</span>`;
+          scoreBox.appendChild(row);
+        });
+        node.appendChild(scoreBox);
+
+        const btns = this.el('div', 'modal-btns');
+        const ok = this.el('button', 'act-btn', '继 续');
+        ok.type = 'button';
+        ok.addEventListener('click', () => { this.sound.tick(); this.closeModal(); resolve('next'); });
+        btns.appendChild(ok);
+        node.appendChild(btns);
+
+        const { mask } = this.openModal(node);
+        void mask;
+        this.countUp(this.$('win-coin'), result.gain, 950);
+      });
+    }
+
+    /** 流局弹窗 */
+    showDrawGame(tenpaiList) {
+      return new Promise(resolve => {
+        const node = document.createDocumentFragment();
+        node.appendChild(this.el('h2', '', '荒 庄'));
+        const names = tenpaiList.map(i => SEAT_INFO[i].name).join('、');
+        node.appendChild(this.el('div', 'subtitle', tenpaiList.length ? `听牌：${names}（不结算金币）` : '无人听牌'));
+        const btns = this.el('div', 'modal-btns');
+        const ok = this.el('button', 'act-btn', '继 续');
+        ok.type = 'button';
+        ok.addEventListener('click', () => { this.sound.tick(); this.closeModal(); resolve(); });
+        btns.appendChild(ok);
+        node.appendChild(btns);
+        this.openModal(node);
+      });
+    }
+
+    /** 总结算 */
+    showMatchOver() {
+      return new Promise(resolve => {
+        const players = this.engine.players.slice().sort((a, b) => b.score - a.score);
+        const node = document.createDocumentFragment();
+        node.appendChild(this.el('h2', '', '总 结 算'));
+        node.appendChild(this.el('div', 'subtitle', '东一局 ~ 南四局 · 全场结束'));
+        players.forEach((p, i) => {
+          const row = this.el('div', 'rank-row');
+          const medal = ['🥇', '🥈', '🥉', ''][i];
+          row.innerHTML = `
+            <span class="no">${i + 1}</span>
+            <span class="avatar" style="background:${SEAT_INFO[p.id].color};width:28px;height:28px;font-size:12px">${SEAT_INFO[p.id].avatar}</span>
+            <span class="nm">${SEAT_INFO[p.id].name} ${medal}</span>
+            <span class="sc">${fmtCoins(p.score)}</span>`;
+          node.appendChild(row);
+        });
+        const btns = this.el('div', 'modal-btns');
+        const again = this.el('button', 'act-btn', '再 来 一 局');
+        again.type = 'button';
+        again.addEventListener('click', () => { this.sound.tick(); this.closeModal(); resolve('again'); });
+        btns.appendChild(again);
+        node.appendChild(btns);
+        this.openModal(node);
+        this.sound.chime();
+      });
+    }
+
+    /** 规则 + 赔率表 */
+    showRules() {
+      const E = global.MJEngine || {};
+      const odds = (E.FAN_MULT || []).map(f =>
+        `<div class="odds-row"><span>${f.name}</span><b>×${f.mult}</b></div>`).join('');
+      const node = document.createDocumentFragment();
+      node.appendChild(this.el('h2', '', '玩 法 规 则'));
+      const body = this.el('div', 'rules-text');
+      body.innerHTML = `
+        <h3>基本</h3>
+        <ul>
+          <li>四人麻将，136 张牌（万、筒、条 + 东南西北中发白），无花牌。</li>
+          <li>起手 13 张，庄家 14 张先出；轮流摸牌打牌，先组成 4 组面子 + 1 对雀头者胜。</li>
+          <li>面子 = 顺子（如 234 万）或刻子（如 3 张东风）；也支持七对子。</li>
+        </ul>
+        <h3>操作</h3>
+        <ul>
+          <li><b>吃</b>：仅上家（左手边）打出的牌可吃，须与手牌组成顺子。</li>
+          <li><b>碰</b>：任何一家打出的牌，手中有 2 张即可碰。</li>
+          <li><b>杠</b>：手牌 4 张相同可暗杠；碰过后再摸到可加杠；他人打出第 4 张可明杠。杠后摸一张岭上牌，且可被抢杠。</li>
+          <li><b>和</b>：摸到所需牌为自摸；他人打出所需牌为点和。</li>
+        </ul>
+        <h3>金币结算</h3>
+        <ul>
+          <li>开局每人 <b>${fmtCoins(E.START_SCORE || 0)}</b> 金币，底注 <b>${fmtCoins(E.BASE_BET || 0)}</b> 金币。</li>
+          <li>不同牌型倍率不同，<b>最终倍率 = 各倍率之积</b>（封顶 ×${E.MULT_CAP || 0}），牌型越大赔率越高。</li>
+          <li>点炮：放炮者独付「底注 × 倍率」；自摸：三家各付「底注 × 倍率 ÷ 2」，赢家共得三份。</li>
+          <li>暗杠每家付 ${fmtCoins((E.KONG_COIN || {}).concealed || 0)}，明杠 / 加杠每家付 ${fmtCoins((E.KONG_COIN || {}).open || 0)}，即时结算。</li>
+          <li>庄家和牌或荒庄听牌则连庄，否则下家坐庄；东一局至南四局共 8 局后总结算。</li>
+        </ul>
+        <h3>赔率表</h3>
+        <div class="odds-hint">同一手牌可叠加多个牌型，倍率相乘。</div>
+        <div class="odds-grid">${odds}</div>`;
+      node.appendChild(body);
+      const btns = this.el('div', 'modal-btns');
+      const ok = this.el('button', 'act-btn', '知道了');
+      ok.type = 'button';
+      ok.addEventListener('click', () => { this.sound.tick(); this.closeModal(); });
+      btns.appendChild(ok);
+      node.appendChild(btns);
+      this.openModal(node);
+    }
+
+    toast(text, ms = 1800) {
+      const t = this.$('toast');
+      t.textContent = text;
+      t.classList.remove('hidden');
+      clearTimeout(this._toastTimer);
+      this._toastTimer = setTimeout(() => t.classList.add('hidden'), ms);
+    }
+  }
+
+  global.MJUI = { UI, SEAT_INFO, WIND_NAMES, fmtCoins, coinShort };
+})(window);

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>QA</title>
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="%230d4a37"/></svg>'>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <div class="brand"><span class="brand-mark">🀄</span><span class="brand-name">雅麻将</span></div>
+      <div class="round-info">
+        <span id="round-name" class="round-name">东一局</span>
+        <span id="wall-count" class="wall-count">牌山 122</span>
+      </div>
+      <div class="top-actions">
+        <button id="btn-sound" class="icon-btn" type="button">🔊</button>
+        <button id="btn-rules" class="icon-btn" type="button">📖</button>
+        <button id="btn-restart" class="icon-btn" type="button">🔄</button>
+      </div>
+    </header>
+
+    <main id="table">
+      <div id="table-felt"></div>
+      <section id="seat-2" class="seat seat-top"></section>
+      <section id="seat-3" class="seat seat-left"></section>
+      <section id="seat-1" class="seat seat-right"></section>
+      <section id="center">
+        <!-- 四家各自独立的出牌区（牌河） -->
+        <div id="rivers">
+          <div id="river-2" class="river river-n" aria-label="对家牌河"></div>
+          <div id="river-3" class="river river-w" aria-label="左家牌河"></div>
+          <div id="center-plaque">
+            <span class="cp-mark cp-n" id="cpm-2">北</span>
+            <span class="cp-mark cp-w" id="cpm-3">西</span>
+            <div class="cp-core">
+              <div class="cp-wind" id="cp-wind">东</div>
+              <div class="cp-round" id="cp-round">东一局</div>
+              <div class="cp-wall" id="cp-wall">余 83 张</div>
+            </div>
+            <span class="cp-mark cp-e" id="cpm-1">东</span>
+            <span class="cp-mark cp-s hot" id="cpm-0">南</span>
+          </div>
+          <div id="river-1" class="river river-e" aria-label="右家牌河"></div>
+          <div id="river-0" class="river river-s" aria-label="我的牌河"></div>
+        </div>
+        <div id="turn-banner"></div>
+      </section>
+      <section id="me">
+        <div id="me-panel" class="panel">
+          <div id="me-info" class="seat-info"></div>
+          <div id="my-melds" class="melds"></div>
+        </div>
+        <div id="my-hand" class="hand"></div>
+      </section>
+      <div id="action-flash"></div>
+    </main>
+
+    <div id="action-bar" class="hidden"></div>
+    <div id="toast" class="hidden"></div>
+  </div>
+  <div id="modal-root"></div>
+  <pre id="qa-log" style="display:none"></pre>
+
+  <script src="../js/tiles.js"></script>
+  <script src="../js/engine.js"></script>
+  <script src="../js/ai.js"></script>
+  <script src="../js/ui.js"></script>
+  <script src="../js/game.js"></script>
+  <script>
+  /* QA 驱动：跑完整对局流程（真实引擎 + 真实 UI 渲染），
+     在指定节点冻结画面用于截图，同时收集运行时错误。
+     #claim → 冻结在「人类鸣牌询问」；#end（默认）→ 自动打完 5 局后冻结  */
+  (function () {
+    const qa = (window.__qa = { mode: location.hash.replace('#', '') || 'end', errors: [], hands: 0, notes: [] });
+    const push = (s) => { if (qa.errors.length < 10) qa.errors.push(s); };
+    // 布局度量：检测横向/纵向溢出与关键元素尺寸
+    const rect = (sel) => { const e = document.querySelector(sel); if (!e) return null; const r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)]; };
+    const metrics = () => ({
+      vw: window.innerWidth, vh: window.innerHeight,
+      scrollW: document.documentElement.scrollWidth, scrollH: document.documentElement.scrollHeight,
+      overflowX: document.documentElement.scrollWidth > window.innerWidth + 1,
+      overflowY: document.documentElement.scrollHeight > window.innerHeight + 1,
+      tileW: getComputedStyle(document.documentElement).getPropertyValue('--tile-w').trim(),
+      table: rect('#table'), myHand: rect('#my-hand'), rivers: rect('#rivers'),
+      river2: rect('#river-2'), river3: rect('#river-3'), river1: rect('#river-1'), river0: rect('#river-0'),
+      seatTop: rect('#seat-2'), seatLeft: rect('#seat-3'), seatRight: rect('#seat-1'),
+      badges: [1, 2, 3].map(i => { const b = document.querySelector('#panel-' + i + ' .badge:not(.wind):not(.dealer):not(.tenpai)'); return b ? b.textContent : null; }),
+    });
+    // 持续把结果同步到 title，保证冻结/未完成时也能读到
+    setInterval(() => { document.title = 'QA_JSON:' + JSON.stringify(Object.assign({}, qa, { metrics: metrics() })); }, 150);
+    window.onerror = (m, s, l) => push('ERROR ' + m + ' @' + String(s).split('/').pop() + ':' + l);
+    window.addEventListener('unhandledrejection', (e) => push('REJECTION ' + ((e.reason && e.reason.message) || e.reason)));
+    const _ce = console.error.bind(console);
+    console.error = function () { push('CONSOLE.ERROR ' + Array.prototype.map.call(arguments, String).join(' ')); _ce.apply(null, arguments); };
+    const _cw = console.warn.bind(console);
+    console.warn = function () { push('CONSOLE.WARN ' + Array.prototype.map.call(arguments, String).join(' ')); _cw.apply(null, arguments); };
+
+    // 压缩 setTimeout 延时（保留真实异步结构，仅加速），setInterval 不动
+    const _st = window.setTimeout;
+    window.setTimeout = function (fn, ms) {
+      const rest = Array.prototype.slice.call(arguments, 2);
+      return _st.apply(window, [fn, Math.min(ms || 0, 30)].concat(rest));
+    };
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      try {
+        const ctrl = new MJGame.GameController();
+        const ui = ctrl.ui, eng = ctrl.engine;
+        const freezeAtClaim = qa.mode === 'claim';
+        let frozen = false;
+
+        ui.animateDiscard = () => {};                       // 其余动画保持真实，以验证动画代码路径
+        ui.askDiscard = async () => ctrl.ai.chooseDiscard(eng.players[0]);
+        ui.askSelfDraw = async () => true;
+        ui.askKong = async () => null;                       // 人类不开杠，避免停在杠询问
+        ui.askRobKong = async () => false;
+        ui.askClaim = async (pid, opts) => {
+          if (freezeAtClaim && !frozen) {
+            frozen = true;
+            // 用真实鸣牌选项渲染操作栏，随后永不 resolve → 画面冻结
+            const btns = [];
+            const win = opts.find(o => o.type === 'win');   if (win) btns.push({ label: '和', cls: 'win' });
+            const kong = opts.find(o => o.type === 'kong'); if (kong) btns.push({ label: '杠' });
+            const pong = opts.find(o => o.type === 'pong'); if (pong) btns.push({ label: '碰' });
+            const chi = opts.find(o => o.type === 'chi');
+            if (chi) chi.combos.forEach(c => btns.push({ label: '吃', sub: ui.comboText(c) }));
+            btns.push({ label: '过', cls: 'pass' });
+            ui.setTurn(0);
+            ui.showActions(btns, 9999);
+            ui.renderAll();
+            qa.notes.push('frozen@claim handIndex=' + eng.handIndex + ' opts=' + opts.length);
+            return new Promise(() => {});
+          }
+          const win = opts.find(o => o.type === 'win');
+          if (win) return win;
+          if (Math.random() < 0.65) {
+            for (const t of ['kong', 'pong', 'chi']) {
+              const o = opts.find(x => x.type === t);
+              if (o) return t === 'chi' ? Object.assign({}, o, { combo: o.combos[0] }) : o;
+            }
+          }
+          return null;
+        };
+        const stopAfter = 5;
+        ui.showSettlement = async () => { qa.hands++; if (eng.handIndex >= stopAfter - 1) ctrl.running = false; };
+        ui.showDrawGame = async () => { qa.hands++; if (eng.handIndex >= stopAfter - 1) ctrl.running = false; };
+        ui.showMatchOver = async () => null;
+
+        await ctrl.start();
+
+        // 渲染与引擎状态对照
+        const cnt = (sel) => document.querySelectorAll(sel).length;
+        qa.dom = {
+          myHand: cnt('#my-hand .tile'), myMelds: cnt('#my-melds .tile'),
+          river: ['#river-0', '#river-1', '#river-2', '#river-3'].map(s => cnt(s + ' .tile')),
+          seat1: cnt('#seat-1 .tile'), seat2: cnt('#seat-2 .tile'), seat3: cnt('#seat-3 .tile'),
+          actionBarVisible: !document.getElementById('action-bar').classList.contains('hidden'),
+        };
+        qa.eng = eng.players.map(p => ({
+          hand: p.hand.length, melds: p.melds.map(m => m.tiles.length), discards: p.discards.length,
+        }));
+
+        qa.done = true;
+        qa.notes.push('handIndex=' + eng.handIndex + ' round=' + eng.roundName +
+          ' wall=' + eng.wall.length + '/' + eng.dead.length +
+          ' scores=' + eng.players.map(p => p.score).join(',') +
+          ' discards=' + eng.players.map(p => p.discards.length).join(',') +
+          ' melds=' + eng.players.map(p => p.melds.length).join(','));
+      } catch (e) {
+        push('FATAL ' + (e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : e));
+      }
+      document.title = 'QA_JSON:' + JSON.stringify(qa);
+      document.getElementById('qa-log').textContent = JSON.stringify(qa, null, 2);
+    });
+  })();
+  </script>
+</body>
+</html>
