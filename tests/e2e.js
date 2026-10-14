@@ -24,6 +24,34 @@ const shot = (name) => path.join(OUT, name + '.png');
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+/**
+ * 启动层已加入 #home 主界面 + #intro 入场动画；#app 牌桌初始 hidden。
+ * 所有针对牌桌的用例都必须先经此函数进场。
+ * 返回 Promise，resolve 表示已进牌桌且 #home / #intro 均已退场。
+ */
+async function enterTable(page, timeout = 20000) {
+  await page.waitForFunction(
+    () => window.__mjHome && document.getElementById('home') && document.getElementById('btn-quick'),
+    { timeout, polling: 60 }
+  );
+  await page.evaluate(() => {
+    const q = document.getElementById('btn-quick');
+    if (q) q.click();
+  });
+  await page.waitForFunction(
+    () => {
+      const home = document.getElementById('home');
+      const app = document.getElementById('app');
+      const intro = document.getElementById('intro');
+      const homeAway = !home || home.classList.contains('hidden');
+      const introAway = !intro || intro.classList.contains('gone') || intro.classList.contains('hidden');
+      const appUp = app && !app.classList.contains('hidden');
+      return homeAway && introAway && appUp;
+    },
+    { timeout, polling: 80 }
+  ).catch(() => {});
+}
+
 /* ---------- 视口配置 ---------- */
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900, dsf: 1 },
@@ -238,6 +266,7 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
 
     await page.setViewport({ width: vp.width, height: vp.height, deviceScaleFactor: vp.dsf || 1, isMobile: !!vp.isMobile, hasTouch: !!vp.hasTouch });
     await page.goto(BASE + '/index.html', { waitUntil: 'load', timeout: 30000 });
+    await enterTable(page);
     await page.waitForFunction(() => document.querySelectorAll('#my-hand .tile').length >= 13, { timeout: 20000, polling: 100 });
     await sleep(1200);   // 等发牌动画 + 布局稳定
 
@@ -255,6 +284,7 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
   page.on('console', (m) => { if (m.type() === 'error') report.consoleErrors.push(`[interaction] ${m.text()}`); });
   await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
   await page.goto(BASE + '/index.html', { waitUntil: 'load' });
+  await enterTable(page);
   await page.waitForFunction(() => document.querySelectorAll('#my-hand .tile').length >= 13, { timeout: 20000 });
 
   /* 埋点：统计吃/碰/胡音效与浮字被真实调用的情况 */
@@ -490,6 +520,10 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
       return false;
     });
     await sleep(400);
+    // 等弹窗真正关掉（cancel 点击后 closeModal 会清空 #modal-root），
+    // 再断言「回到对局」。否则可能与「流局/和牌」等后续弹窗叠在一起而误判。
+    await page.waitForFunction(() => !document.querySelector('.modal-mask'), { timeout: 5000, polling: 80 })
+      .catch(() => { /* 超时则按下面断言如实失败 */ });
     const stillPlaying = await page.evaluate(() => (!document.querySelector('.modal-mask')) && document.querySelectorAll('#my-hand .tile').length >= 13);
     report.interaction.restartModal = { opened: true, cancelButtonFound: cancelled, modalClosedAndGameAlive: stillPlaying };
   } catch (e) { report.errors.push('重开弹窗: ' + e.message); }
@@ -505,6 +539,7 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
     await fpage.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
     const fileUrl = 'file:///' + path.resolve(__dirname, '..', 'index.html').replace(/\\/g, '/');
     await fpage.goto(fileUrl, { waitUntil: 'load', timeout: 30000 });
+    await enterTable(fpage);
     await fpage.waitForFunction(() => document.querySelectorAll('#my-hand .tile').length >= 13, { timeout: 20000, polling: 100 });
     await sleep(900);
     const fm = await fpage.evaluate(measure);

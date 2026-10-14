@@ -115,11 +115,12 @@
     );
   }
 
-  /** 骨瓷圆润倒角牌体 + 阴刻雕花台面（不再是扑克风鎏金细框） */
-  function faceFrame(inner) {
+  /** 各花色绘制函数的收尾：把「纹样片段」包成一张裸字面（不含牌体、不含 <svg>） */
+  function faceInnerOf(inner) { return inner; }
+
+  /** 陶瓷圆润倒角牌体 + 阴刻雕花台面（不再是扑克风鎏金细框）—— 只返回 <svg> 内的图形片段 */
+  function faceBody(inner) {
     return (
-      '<svg viewBox="0 0 ' + VW + ' ' + VH + '" xmlns="http://www.w3.org/2000/svg" class="tile-svg">' +
-      defs() +
       // 外层骨瓷倒角基底
       '<rect x="0.5" y="0.5" width="' + (VW - 1) + '" height="' + (VH - 1) + '" rx="6.5" fill="url(#mjBody)" stroke="#cab996" stroke-width="0.7"/>' +
       // 牌肚受光内斜面（象牙白台面）
@@ -132,7 +133,15 @@
       '<rect x="2.2" y="2" width="' + (VW - 4.4) + '" height="24" rx="5.2" fill="url(#mjShine)" opacity=".5"/>' +
       // 牌面下缘内投影：纹样区「凹进」牌面（置于纹样之下，不压暗数字）
       '<rect x="2.2" y="' + (VH - 19) + '" width="' + (VW - 4.4) + '" height="16.8" rx="4.6" fill="url(#mjInnerShade)"/>' +
-      inner +
+      inner
+    );
+  }
+
+  /** 完整牌张 SVG（含牌体），供牌桌/牌河/副露/结算使用 */
+  function faceFrame(inner) {
+    return (
+      '<svg viewBox="0 0 ' + VW + ' ' + VH + '" xmlns="http://www.w3.org/2000/svg" class="tile-svg">' +
+      defs() + faceBody(inner) +
       '</svg>'
     );
   }
@@ -188,7 +197,7 @@
    */
   function manFace(i) {
     const n = i % 9;
-    return faceFrame(
+    return faceInnerOf(
       glyph(CN_NUM[n], { y: 27.5, size: 19, color: INK, font: NUM_FONT, stroke: 0.8 }) +
       glyph('萬', { y: 51, size: 21, color: RED, stroke: 0.9 }) +
       '<path d="M11 33.5 C17 32 27 32 33 33.5" stroke="' + GOLD + '" stroke-opacity=".45" stroke-width="0.9" fill="none"/>'
@@ -259,7 +268,7 @@
           break;
       }
     }
-    return faceFrame(out);
+    return faceInnerOf(out);
   }
 
   /* --------------- 条子 --------------- */
@@ -283,7 +292,7 @@
   /** 一条：翠鸟 */
   function birdFace() {
     const D = '#0b4a2e';
-    return faceFrame(
+    return faceInnerOf(
       '<path d="M8 49 C14 45.5 30 45.5 36 49" stroke="' + D + '" stroke-width="1.7" fill="none" stroke-linecap="round"/>' +
       '<path d="M24.5 30 C28.6 23 30.6 16 29.4 9.5 C26.4 14.6 24.6 21.5 23.4 27.5 Z" fill="' + RED + '"/>' +
       '<ellipse cx="20.6" cy="30.5" rx="7.6" ry="9.2" fill="' + GREEN + '"/>' +
@@ -338,7 +347,7 @@
         }
         break;
     }
-    return faceFrame(out);
+    return faceInnerOf(out);
   }
 
   /* --------------- 字牌 --------------- */
@@ -346,14 +355,14 @@
     const ch = HONOR_NAMES[i - 27];
     if (i === 33) {
       // 白：空框
-      return faceFrame(
+      return faceInnerOf(
         '<rect x="11" y="9" width="22" height="42" rx="3.4" fill="none" stroke="' + BLUE + '" stroke-width="2" stroke-dasharray="4,2"/>' +
         '<rect x="15" y="13" width="14" height="34" rx="2.2" fill="none" stroke="' + BLUE + '" stroke-width="1" stroke-opacity=".6"/>'
       );
     }
     const color = i === 31 ? RED : (i === 32 ? GREEN : INK);
     const size = i >= 31 ? 26 : 25;
-    return faceFrame(glyph(ch, { y: i >= 31 ? 40 : 39.5, size: size, color: color, stroke: 0.9 }));
+    return faceInnerOf(glyph(ch, { y: i >= 31 ? 40 : 39.5, size: size, color: color, stroke: 0.9 }));
   }
 
   /* --------------- 牌背 --------------- */
@@ -392,15 +401,55 @@
     );
   }
 
-  const faceCache = {};
-  function tileFaceSVG(i) {
-    if (!faceCache[i]) {
-      if (i < 9) faceCache[i] = manFace(i);
-      else if (i < 18) faceCache[i] = pinFace(i);
-      else if (i < 27) faceCache[i] = souFace(i);
-      else faceCache[i] = honorFace(i);
+  const rawFace = {};
+  function faceInner(i) {
+    if (!rawFace[i]) {
+      if (i < 9) rawFace[i] = manFace(i);
+      else if (i < 18) rawFace[i] = pinFace(i);
+      else if (i < 27) rawFace[i] = souFace(i);
+      else rawFace[i] = honorFace(i);
     }
-    return faceCache[i];
+    return rawFace[i];
+  }
+
+  const faceCache = {};
+
+  /** 完整牌张（骨瓷牌体 + 纹样），用于牌桌与所有已出牌显示 */
+  function tileFaceSVG(i) {
+    if (!faceCache['s' + i]) {
+      faceCache['s' + i] = '<svg viewBox="0 0 ' + VW + ' ' + VH + '" xmlns="http://www.w3.org/2000/svg" class="tile-svg" preserveAspectRatio="none">' +
+        defs() + faceBody(faceInner(i)) + '</svg>';
+    }
+    return faceCache['s' + i];
+  }
+
+  /**
+   * 只有「牌面纹样」、没有牌体的裸字面 SVG（与牌面同 viewBox 44×60）。
+   * 供主界面入场动画使用 —— 数十张字面飞入洗牌后直接拼成「来把麻将」，
+   * 纹样与牌桌上的牌完全同源，视觉上就是同一套牌。
+   */
+  function glyphSVG(i) {
+    if (!faceCache['g' + i]) {
+      faceCache['g' + i] = '<svg viewBox="0 0 ' + VW + ' ' + VH + '" xmlns="http://www.w3.org/2000/svg" class="glyph-svg" preserveAspectRatio="xMidYMid meet">' +
+        defs() + faceInner(i) + '</svg>';
+    }
+    return faceCache['g' + i];
+  }
+
+  /**
+   * 批量拼合：把多张纹样放进**同一个** SVG（只写一次 defs）。
+   * 入场动画有数十张字面，每张一个 SVG 会让 defs 重复上百次；
+   * 这里用 glyphSheet(ids) + `<use xlink:href="#ig-N">` 引用，一份 defs 搞定。
+   * 返回 { defs, uses }：defs 为 <defs> 内容，uses 为可直接拼进外层 <g> 的 use 片段。
+   */
+  function glyphSheet(indices) {
+    const list = Array.isArray(indices) ? indices : [indices];
+    let defsStr = '';
+    const uses = list.map((i, n) => {
+      defsStr += '<g id="ig-' + n + '">' + faceInner(i) + '</g>';
+      return '<use xlink:href="#ig-' + n + '" href="#ig-' + n + '"/>';
+    });
+    return { defs: defsStr, uses };
   }
 
   /* --------------- 合成音效 --------------- */
@@ -548,7 +597,7 @@
   return {
     indexToTile, tileToIndex, tileName, SUIT_OF, RANK_OF, isHonor, isTerminal,
     TOTAL_KINDS, SUIT_CHARS, HONOR_NAMES, CN_NUM,
-    tileFaceSVG, backFace, Sound,
+    tileFaceSVG, glyphSVG, glyphSheet, faceInner, defs, backFace, Sound,
     COLORS: { INK, RED, GREEN, BLUE, IVORY, GOLD, GOLD_LT },
   };
 });

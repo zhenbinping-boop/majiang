@@ -1,9 +1,65 @@
 /* =========================================================
-   雅 · 麻将 – 视觉样式
-   设计：深蓝夜空牌桌 + 鎏金镶边 + 象牙牌面，参考「深蓝/鎏金/书法」配色体系
+   来把麻将 – 视觉样式
+   ─────────────────────────────────────────────────────────
+   两层视觉体系，互不干扰：
+     ① 主界面层（#home）——「清新轻快」：明亮米白底 + 暖橙主色，
+        圆角卡片、柔和阴影、大主按钮，像休闲小游戏一样轻量亲民。
+        设计目标：三分钟一把、随时随地开打。
+     ② 牌桌层（#app）——「深蓝夜空」：深蓝牌桌 + 鎏金镶边 + 象牙牌面，
+        正式对局的沉浸感。
    ========================================================= */
 
 :root {
+  /* ============ 主界面设计 token（清新轻快） ============
+     只在 #home / #intro 层内生效，用 --hm- 前缀与牌桌 token 隔离。 */
+  /* 色彩：米白纸感底 + 暖橙主色 */
+  --hm-bg-1: #fffaf2;      /* 顶部：最亮的暖白 */
+  --hm-bg-2: #fff2e2;      /* 中部：淡杏 */
+  --hm-bg-3: #ffe6cf;      /* 底部：暖橙薄雾 */
+  --hm-paper: #fffdf9;     /* 卡片纸面 */
+  --hm-line: rgba(196, 138, 84, 0.20);
+  --hm-line-strong: rgba(196, 138, 84, 0.34);
+  --hm-ink: #4a3527;       /* 主文字：暖褐墨 */
+  --hm-ink-2: #8b6f57;     /* 次级文字 */
+  --hm-ink-3: #b39a83;     /* 弱化文字 */
+  --hm-primary: #ff8a3d;   /* 暖橙主色 */
+  --hm-primary-d: #ef6f1c; /* 主色按压/落影 */
+  --hm-primary-l: #ffa968; /* 主色高光 */
+  --hm-accent: #2fae84;    /* 点缀：青绿（在线/可用状态） */
+  --hm-warn: #e8503a;      /* 点缀：朱红（强调数字） */
+  --hm-glow: rgba(255, 138, 61, 0.34);
+
+  /* 入场动画时间轴 —— 四个关键点，改这里即可整体调时 */
+  --t-shuffle: 1.4s;   /* A→B 飞入 + 洗牌成堆 + 一顿（单张字面第一段动画时长） */
+  --t-settle: 1.4s;    /* B 洗牌收束完成时刻 = 第二段动画的起点 */
+  --t-rise-d: .95s;    /* C→D 字面「立」向落位并淡出的时长 */
+  --t-rise: 1.75s;     /* C 标题开始显现的时刻 */
+  --t-end: 2.75s;      /* E 动画层整体淡出、主界面接棒 */
+
+  /* 圆角层级 */
+  --hm-r-sm: 10px;
+  --hm-r-md: 16px;
+  --hm-r-lg: 22px;
+  --hm-r-xl: 30px;
+  --hm-r-pill: 999px;
+
+  /* 柔和阴影层级（暖色调，避免灰黑脏感） */
+  --hm-sh-1: 0 1px 2px rgba(140, 92, 46, 0.06), 0 2px 8px rgba(140, 92, 46, 0.06);
+  --hm-sh-2: 0 2px 6px rgba(140, 92, 46, 0.07), 0 8px 22px rgba(140, 92, 46, 0.09);
+  --hm-sh-3: 0 6px 16px rgba(140, 92, 46, 0.10), 0 18px 44px rgba(140, 92, 46, 0.12);
+  --hm-sh-cta: 0 6px 0 var(--hm-primary-d), 0 12px 26px rgba(239, 111, 28, 0.34);
+
+  /* 间距系统（4px 基准） */
+  --hm-s1: 4px;  --hm-s2: 8px;  --hm-s3: 12px; --hm-s4: 16px;
+  --hm-s5: 20px; --hm-s6: 26px; --hm-s7: 34px; --hm-s8: 44px;
+
+  /* 字号层级：用 clamp 使跨屏观感一致（不随视口缩放跑掉） */
+  --hm-fs-brand: clamp(38px, 9.4vmin, 62px);
+  --hm-fs-slogan: clamp(12px, 2.5vmin, 16px);
+  --hm-fs-cta: clamp(18px, 3.9vmin, 24px);
+  --hm-fs-sub: clamp(13px, 2.7vmin, 17px);
+  --hm-fs-tiny: clamp(11px, 2.2vmin, 13px);
+
   /* ---------- 统一「横屏逻辑视口」坐标系 ----------
      牌桌的一切尺寸都基于这两个变量计算。默认等于真实视口；
      手机竖屏时（下方媒体查询）会把两者**互换**（--vw 取视口高、--vh 取视口宽），
@@ -48,6 +104,13 @@
   --tile-edge: rgba(226, 210, 168, 0.96);
   --tile-edge-2: rgba(158, 136, 92, 0.92);
 
+  /* 牌张「按用途缩放」的统一参数：入场动画的立牌、标题牌都用它，
+     一处改动即可整体调大小，不必逐个 width/height 硬写。 */
+  --tile-scale: 1;
+  --tile-scale-river: 1;
+  --tile-scale-stand: 1;
+  --tile-scale-title: 1;
+
   /* 立牌立体感 (其他玩家的牌背)：顶缘受光 + 双侧暗面 + 底缘背光
      + 两层实心偏移充当牌体厚度 + 投影 — 一个 CSS 变量供横/竖两处牌墙复用。 */
   --slab-sh:
@@ -67,6 +130,9 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
+/* .hidden 是全局语义类：任何带它的元素都不渲染 */
+.hidden { display: none !important; }
+
 html, body {
   height: 100%;
   overflow: hidden;
@@ -75,6 +141,407 @@ html, body {
   color: var(--ivory);
   user-select: none;
   touch-action: manipulation;
+}
+
+/* =========================================================
+   一、主界面（#home）—— 清新轻快
+   ========================================================= */
+.home {
+  position: fixed; inset: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--hm-bg-1) 0%, var(--hm-bg-2) 52%, var(--hm-bg-3) 100%);
+  color: var(--hm-ink);
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}
+/* 背景层：柔光斑 + 极淡牌纹，制造纸感与呼吸感，不抢主体 */
+.hm-bg {
+  position: absolute; inset: -10%;
+  pointer-events: none;
+  background:
+    radial-gradient(circle 34vmin at 14% 12%, rgba(255, 186, 120, .34), transparent 70%),
+    radial-gradient(circle 30vmin at 88% 20%, rgba(255, 214, 150, .30), transparent 70%),
+    radial-gradient(circle 40vmin at 76% 92%, rgba(255, 166, 96, .24), transparent 72%),
+    radial-gradient(circle 26vmin at 22% 88%, rgba(160, 214, 186, .18), transparent 70%);
+  filter: blur(2px);
+  animation: hm-drift 18s ease-in-out infinite alternate;
+}
+@keyframes hm-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(0, -2.4%, 0) scale(1.05); }
+}
+/* 细网格纸纹 */
+.hm-bg::after {
+  content: ""; position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(196, 138, 84, .045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(196, 138, 84, .045) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: radial-gradient(circle at 50% 45%, #000 30%, transparent 78%);
+  -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 30%, transparent 78%);
+}
+
+/* 单一 wrapper：统一左右内边距 + 纵向节奏（gap 间距系统） */
+.hm-wrap {
+  position: relative; z-index: 2;
+  width: min(92vw, 460px);
+  display: flex; flex-direction: column; align-items: center;
+  gap: var(--hm-s6);
+  padding: var(--hm-s5) var(--hm-s4);
+}
+
+/* ---- 品牌区 ---- */
+.hm-head { display: flex; flex-direction: column; align-items: center; gap: var(--hm-s3); }
+
+.hm-logo {
+  width: clamp(56px, 15vmin, 84px);
+  height: calc(clamp(56px, 15vmin, 84px) * 1.34);
+  border-radius: 14px;
+  background: linear-gradient(168deg, #fffefb 0%, #fdf6e9 44%, #eee0c6 100%);
+  border: 1px solid var(--hm-line-strong);
+  box-shadow: var(--hm-sh-2), inset 0 1.5px 0 #fff;
+  display: flex; align-items: center; justify-content: center;
+  animation: hm-logo-in .8s cubic-bezier(.2, 1.1, .35, 1) both .1s;
+}
+.hm-logo-tile {
+  font-family: "STKaiti", "KaiTi", "Kaiti SC", "楷体", "Songti SC", serif;
+  font-size: clamp(30px, 8.4vmin, 46px);
+  font-weight: 700; line-height: 1;
+  color: #c8331d;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .9), 0 -1px 1px rgba(120, 40, 16, .28);
+}
+@keyframes hm-logo-in {
+  from { opacity: 0; transform: translateY(-16px) rotate(-7deg) scale(.86); }
+}
+
+.hm-brand {
+  font-family: "STKaiti", "KaiTi", "Kaiti SC", "楷体", "Songti SC", "Noto Serif SC", serif;
+  font-size: var(--hm-fs-brand);
+  font-weight: 700;
+  letter-spacing: .14em;
+  line-height: 1.1;
+  display: flex; gap: 0.02em;
+  filter: drop-shadow(0 3px 7px rgba(239, 111, 28, .26));
+}
+/* 渐变字标：与 .intro-title 同理 —— 颜色层放 ::before，
+   这样文字本身的 opacity / transform 动画一定生效（否则渐变会「提前显形」）。 */
+.hm-brand .hb-ch {
+  display: inline-block; position: relative;
+  color: transparent;
+  animation: hm-ch-in .62s cubic-bezier(.18, 1.2, .34, 1) both;
+}
+.hm-brand .hb-ch::before {
+  content: attr(data-ch);
+  position: absolute; left: 0; top: 0;
+  background: linear-gradient(178deg, #ffb27a 0%, var(--hm-primary) 42%, var(--hm-primary-d) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.hm-brand .hb-ch:nth-child(1) { animation-delay: .24s; }
+.hm-brand .hb-ch:nth-child(2) { animation-delay: .33s; }
+.hm-brand .hb-ch:nth-child(3) { animation-delay: .42s; }
+.hm-brand .hb-ch:nth-child(4) { animation-delay: .51s; }
+@keyframes hm-ch-in {
+  from { opacity: 0; transform: translateY(18px) scale(.7); filter: blur(5px); }
+}
+
+.hm-slogan {
+  font-size: var(--hm-fs-slogan);
+  letter-spacing: .24em;
+  color: var(--hm-ink-2);
+  font-weight: 500;
+}
+
+/* 品牌区入场整体淡入上浮 */
+.hm-head { animation: hm-rise .72s cubic-bezier(.2, .9, .3, 1) both; }
+@keyframes hm-rise { from { opacity: 0; transform: translateY(20px); } }
+
+/* ---- 主 CTA 区 ---- */
+.hm-cta { width: 100%; display: flex; flex-direction: column; align-items: center; gap: var(--hm-s3); }
+
+/* 超大主按钮：视觉中心 + 拇指可达（≥56px 高） */
+.hm-btn-primary {
+  position: relative;
+  width: 100%;
+  min-height: max(58px, 8.4vmin);
+  border: none;
+  border-radius: var(--hm-r-pill);
+  padding: var(--hm-s3) var(--hm-s5);
+  cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px;
+  color: #fff;
+  font-family: inherit;
+  background: linear-gradient(178deg, var(--hm-primary-l) 0%, var(--hm-primary) 48%, var(--hm-primary-d) 100%);
+  box-shadow: var(--hm-sh-cta);
+  animation: hm-cta-in .7s cubic-bezier(.2, 1.16, .34, 1) both .52s;
+  transition: transform .14s ease, box-shadow .14s ease, filter .14s ease;
+  overflow: hidden;
+}
+/* 掠光 */
+.hm-btn-primary::after {
+  content: ""; position: absolute; top: 0; left: -60%;
+  width: 42%; height: 100%;
+  background: linear-gradient(102deg, transparent, rgba(255, 255, 255, .5), transparent);
+  transform: skewX(-18deg);
+  animation: hm-sheen 3.6s ease-in-out infinite 1.5s;
+  pointer-events: none;
+}
+@keyframes hm-sheen { 0% { left: -60%; } 46%, 100% { left: 130%; } }
+.hm-btn-primary .qb-main {
+  font-size: var(--hm-fs-cta); font-weight: 700; letter-spacing: .2em; text-indent: .2em;
+  text-shadow: 0 1px 3px rgba(160, 66, 6, .32);
+}
+.hm-btn-primary .qb-sub {
+  font-size: var(--hm-fs-tiny); font-weight: 500; letter-spacing: .1em;
+  opacity: .92;
+}
+.hm-btn-primary:hover { filter: brightness(1.045); }
+.hm-btn-primary:active {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 var(--hm-primary-d), 0 5px 14px rgba(239, 111, 28, .3);
+}
+@keyframes hm-cta-in {
+  from { opacity: 0; transform: translateY(26px) scale(.94); }
+}
+
+/* 副按钮：小而克制 */
+.hm-btn-ghost {
+  width: auto; min-width: 54%;
+  border-radius: var(--hm-r-pill);
+  padding: var(--hm-s2) var(--hm-s5);
+  cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  font-family: inherit; color: var(--hm-ink);
+  background: rgba(255, 255, 255, .78);
+  border: 1px solid var(--hm-line-strong);
+  box-shadow: var(--hm-sh-1);
+  backdrop-filter: blur(6px);
+  transition: transform .14s, box-shadow .14s, background .14s;
+  animation: hm-rise .5s ease both;
+}
+.hm-btn-ghost:hover { background: #fff; box-shadow: var(--hm-sh-2); }
+.hm-btn-ghost:active { transform: translateY(2px) scale(.985); }
+.hm-btn-ghost .gb-main { font-size: var(--hm-fs-sub); font-weight: 700; letter-spacing: .16em; text-indent: .16em; }
+.hm-btn-ghost .gb-sub { font-size: var(--hm-fs-tiny); color: var(--hm-ink-3); letter-spacing: .04em; }
+
+/* ---- 次要入口 ---- */
+.hm-foot {
+  display: flex; gap: var(--hm-s3); align-items: center; justify-content: center;
+  animation: hm-rise .7s ease both .68s;
+}
+.hm-mini {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--hm-line);
+  background: rgba(255, 255, 255, .62);
+  color: var(--hm-ink-2);
+  font-family: inherit; font-size: var(--hm-fs-tiny); font-weight: 500;
+  letter-spacing: .06em;
+  padding: 8px 15px; border-radius: var(--hm-r-pill);
+  cursor: pointer;
+  min-height: 38px;
+  transition: background .14s, color .14s, box-shadow .14s, transform .12s;
+}
+.hm-mini:hover { background: #fff; color: var(--hm-ink); box-shadow: var(--hm-sh-1); }
+.hm-mini:active { transform: scale(.97); }
+.hm-mini .mi-ic { font-size: 14px; line-height: 1; }
+
+/* 主界面整体退场 */
+.home.leaving { animation: hm-out .44s cubic-bezier(.4, 0, .7, .3) forwards; }
+@keyframes hm-out {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(1.045); }
+}
+
+/* =========================================================
+   二、入场动画（洗牌拼标题）
+   ─────────────────────────────────────────────────────────
+   阶段（纯 CSS keyframes 驱动，JS 只负责排版与排期）：
+     A 0.05–1.45s  数十张麻将字面从四方飞入中央、边飞边翻转、聚成紧密牌堆
+     B 1.30–1.75s  整堆「啪」地一顿（洗牌收束）
+     C 1.75–2.75s  每张字面「立」向各自的落位，同时外层散雾淡出、标题显现
+     D 2.35–2.75s  「来把麻将」四字 + 副标语依次落定
+     E 2.75–3.15s  动画层整体淡出，主界面接棒
+   全部关键帧写在 CSS 里，JS 只写 4 个时间常量，便于统一调时。
+   ========================================================= */
+.intro {
+  position: absolute; inset: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--hm-bg-1) 0%, var(--hm-bg-2) 52%, var(--hm-bg-3) 100%);
+  pointer-events: auto;
+}
+.intro.gone { display: none; }
+.intro.leaving { animation: intro-out .42s cubic-bezier(.4, 0, .72, .3) forwards; }
+@keyframes intro-out { to { opacity: 0; visibility: hidden; } }
+
+.intro-tiles { position: absolute; inset: 0; }
+.intro-tiles svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* 单张飞牌：两段动画串联，正好对应设计的两个阶段
+     --t-shuffle 段（A→B）：从视口外飞入 + 翻转 → 收成中央牌堆 → 「啪」地一顿
+     --t-rise-d  段（C→D）：从牌堆「立」向自己的落位，同时淡出把舞台交给标题
+
+   变量（全部由 JS 按每张字面单独写入）：
+     --fx/--fy/--fr/--fs  起点：视口外的随机位置 + 偏转角 + 放大初值
+     --tx/--ty/--tr/--tc  中段：中央牌堆内的位置 + 偏转角 + 收拢缩放
+     --dx/--dy/--dc       终点：落位偏移（<use> 自身已在落点，故为 0）+ 微缩
+   <use> 的 x/y 就是它的落点，所以「立起来」这一段实际是「从牌堆回到 (0,0)」。 */
+.it {
+  transform-box: fill-box;
+  transform-origin: center center;
+  animation:
+    it-shuffle var(--t-shuffle) cubic-bezier(.34, .78, .3, 1) var(--it-delay, 0s) both,
+    it-rise var(--t-rise-d) cubic-bezier(.22, .9, .3, 1) calc(var(--it-delay, 0s) + var(--t-settle)) both;
+  will-change: transform, opacity;
+}
+@keyframes it-shuffle {
+  0% {
+    transform: translate(var(--fx), var(--fy)) rotate(var(--fr)) scale(var(--fs, 1.6));
+    opacity: 0;
+  }
+  18% { opacity: 1; }
+  74% {
+    transform: translate(var(--tx), var(--ty)) rotate(var(--tr)) scale(var(--tc, .6));
+    opacity: 1;
+  }
+  86% {
+    /* 「啪」地一顿（洗牌收束的顿点） */
+    transform: translate(calc(var(--tx) * 1.1), calc(var(--ty) * 1.1)) rotate(var(--tr)) scale(calc(var(--tc, .6) * 1.08));
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--tx), var(--ty)) rotate(var(--tr)) scale(var(--tc, .6));
+    opacity: 1;
+  }
+}
+/* C→D：从牌堆「立」向落位，边铺开边淡出 */
+@keyframes it-rise {
+  0% {
+    transform: translate(var(--tx), var(--ty)) rotate(var(--tr)) scale(var(--tc, .6));
+    opacity: 1;
+  }
+  38% {
+    transform: translate(var(--dx, 0px), var(--dy, 0px)) rotate(0deg) scale(var(--dc, .92));
+    opacity: .92;
+  }
+  100% {
+    transform: translate(var(--dx, 0px), var(--dy, 0px)) rotate(0deg) scale(var(--dc, .92));
+    opacity: 0;
+  }
+}
+@keyframes it-shuffle {
+  0% {
+    transform: translate(var(--fx), var(--fy)) rotate(var(--fr)) scale(var(--fs, 1.6));
+    opacity: 0;
+  }
+  18% { opacity: 1; }
+  74% {
+    transform: translate(var(--tx), var(--ty)) rotate(var(--tr)) scale(var(--tc, .6));
+    opacity: 1;
+  }
+  86% {
+    /* 「啪」地一顿（洗牌收束的顿点） */
+    transform: translate(calc(var(--tx) * 1.1), calc(var(--ty) * 1.1)) rotate(var(--tr)) scale(calc(var(--tc, .6) * 1.08));
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--tx), var(--ty)) rotate(var(--tr)) scale(var(--tc, .6));
+    opacity: 1;
+  }
+}
+/* C→D：从牌堆「立」向落位，边铺开边淡出 */
+@keyframes it-rise {
+  0% {
+    transform: translate(var(--tx), var(--ty)) rotate(var(--tr)) scale(var(--tc, .6));
+    opacity: 1;
+  }
+  38% {
+    transform: translate(var(--dx, 0px), var(--dy, 0px)) rotate(0deg) scale(var(--dc, .92));
+    opacity: .92;
+  }
+  100% {
+    transform: translate(var(--dx, 0px), var(--dy, 0px)) rotate(0deg) scale(var(--dc, .92));
+    opacity: 0;
+  }
+}
+
+/* 洗牌散雾：在字面「立」起来的同时亮一下再消失，把视线交给标题 */
+.intro::before {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 46vmin; height: 46vmin; margin: -23vmin 0 0 -23vmin;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 178, 110, .55), rgba(255, 196, 140, .12) 46%, transparent 72%);
+  opacity: 0; pointer-events: none;
+  animation: intro-burst .8s ease-out var(--t-rise, 1.75s) both;
+}
+@keyframes intro-burst {
+  0% { opacity: 0; transform: scale(.5); }
+  26% { opacity: .95; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.65); }
+}
+
+/* 标题：洗牌落定后从牌堆里「长」出来
+   注意：文字用了 background-clip:text 的渐变填充，若直接在元素上做 opacity 动画，
+   部分浏览器会因为渐变画在背景层而不受 opacity 影响（标题会「提前显形」）。
+   故这里给每个字套一层独立动画，且只动 transform + opacity，
+   并显式把渐变元素本身的 opacity 交给同一关键帧管理。 */
+.intro-title {
+  position: relative; z-index: 3;
+  display: flex; gap: .02em;
+  font-family: "STKaiti", "KaiTi", "Kaiti SC", "楷体", "Songti SC", "Noto Serif SC", serif;
+  font-size: var(--hm-fs-brand);
+  font-weight: 700; letter-spacing: .14em; line-height: 1.1;
+  filter: drop-shadow(0 4px 10px rgba(239, 111, 28, .3));
+}
+.intro-title .it-ch {
+  display: inline-block;
+  position: relative;
+  color: transparent;          /* 真实文字只用来撑开宽度，显色交给 ::before */
+  opacity: 0;
+  transform: translateY(16px) scale(.7);
+  animation: it-ch-in .46s cubic-bezier(.2, 1.33, .36, 1) both;
+  animation-delay: calc(var(--t-rise) + var(--i, 0) * .08s);
+}
+/* 渐变字：把「颜色层」独立成一个伪元素，opacity 就一定能生效 */
+.intro-title .it-ch::before {
+  content: attr(data-ch);
+  position: absolute; left: 0; top: 0;
+  background: linear-gradient(178deg, #ffb27a 0%, var(--hm-primary) 42%, var(--hm-primary-d) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+@keyframes it-ch-in { to { opacity: 1; transform: none; } }
+
+.intro-slogan {
+  position: absolute; z-index: 3;
+  top: calc(50% + var(--hm-fs-brand) * .78);
+  font-size: var(--hm-fs-slogan);
+  letter-spacing: .3em; text-indent: .3em;
+  color: var(--hm-ink-2); font-weight: 500;
+  opacity: 0;
+  animation: hm-rise .5s ease both calc(var(--t-rise, 1.75s) + .34s);
+}
+
+.intro-skip {
+  position: absolute; right: var(--hm-s5); bottom: var(--hm-s5);
+  z-index: 5;
+  border: 1px solid var(--hm-line-strong);
+  background: rgba(255, 255, 255, .68);
+  color: var(--hm-ink-2);
+  font-family: inherit; font-size: var(--hm-fs-tiny); letter-spacing: .1em;
+  padding: 7px 16px; border-radius: var(--hm-r-pill);
+  min-height: 34px;
+  cursor: pointer;
+  opacity: 0;
+  animation: hm-rise .45s ease both .5s;
+  transition: background .14s, color .14s;
+}
+.intro-skip:hover { background: #fff; color: var(--hm-ink); }
+
+/* 尊重系统「减弱动态效果」：直接跳过洗牌，只留淡入 */
+@media (prefers-reduced-motion: reduce) {
+  .it { animation-duration: .32s !important; }
+  .intro::before, .hm-bg { animation: none !important; }
+  .hm-btn-primary::after { animation: none !important; }
 }
 
 #app {
@@ -399,7 +866,8 @@ html, body {
 /* =========== 牌 =========== */
 /* 立体麻将质感：象牙色侧边 (牌厚) + 底部暗边 + 双层落影 */
 .tile {
-  width: var(--tile-w); height: var(--tile-h);
+  width: calc(var(--tile-w) * var(--tile-scale));
+  height: calc(var(--tile-h) * var(--tile-scale));
   border-radius: 6px; cursor: default;
   transition: transform .16s ease, box-shadow .16s, filter .16s;
   position: relative; flex: 0 0 auto;
@@ -887,6 +1355,20 @@ html, body {
     transform-origin: center center;
     overflow: hidden;
   }
+  /* 主界面与入场动画层跟着 #app 一起旋转：
+     这样整块屏幕只有一个「横屏逻辑视口」坐标系 —— 主界面按横屏排版
+     （按钮落在拇指自然位置、标题有横向气口），入场动画的洗牌落位也用同一套
+     坐标计算，弹窗、牌桌、主界面三者彻底统一，不存在任何「个别反旋」的例外。 */
+  #home, #intro {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: var(--vw);
+    height: var(--vh);
+    transform: translate(-50%, -50%) rotate(90deg);
+    transform-origin: center center;
+    overflow: hidden;
+  }
   /* 弹窗根与 #app 同步旋转：弹窗（#modal-root 的子元素）与牌桌共享同一坐标系，
      不再需要单独为竖屏写尺寸 hack。 */
   #modal-root {
@@ -901,6 +1383,25 @@ html, body {
     z-index: 100;
   }
   #modal-root > * { pointer-events: auto; }
+
+  /* 竖屏下逻辑视口的长边是「横」的，主界面按横屏排版：
+     品牌与主按钮左右并置，比竖着堆一列更贴合「横过来看」的宽幅观感，
+     也给主按钮留出更长的横向出手距离（拇指横向滑动的舒适区）。 */
+  .hm-wrap {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(16px, 6vmin, 54px);
+    width: 100%;
+    max-width: 100%;
+    padding: 0 var(--hm-s5);
+  }
+  .hm-head { flex: 0 1 auto; }
+  .hm-cta { flex: 0 0 auto; width: clamp(180px, 34vmin, 300px); }
+  .hm-foot { flex-direction: column; gap: var(--hm-s2); }
+  .hm-logo { width: clamp(44px, 13vmin, 66px); height: calc(clamp(44px, 13vmin, 66px) * 1.34); border-radius: 12px;}
+  .hm-logo-tile { font-size: clamp(24px, 7.4vmin, 36px); }
+  .intro-skip { right: var(--hm-s4); bottom: var(--hm-s4); }
 
   /* ---- 以下是纯「紧凑尺寸」微调，方向/定位完全交给统一坐标系 ---- */
   #topbar {

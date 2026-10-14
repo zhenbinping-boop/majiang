@@ -749,6 +749,14 @@
         again.type = 'button';
         again.addEventListener('click', () => { this.sound.tick(); this.closeModal(); resolve('again'); });
         btns.appendChild(again);
+        // 回主界面：整场结束后给一条「不继续打」的出口
+        const home = this.el('button', 'act-btn pass', '回 主 界 面');
+        home.type = 'button';
+        home.addEventListener('click', () => {
+          this.sound.tick(); this.closeModal();
+          if (typeof global.__mjBackHome === 'function') global.__mjBackHome();
+        });
+        btns.appendChild(home);
         node.appendChild(btns);
         this.openModal(node);
         this.sound.chime();

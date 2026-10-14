@@ -3,16 +3,62 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#101733">
-  <title>雅 · 麻将 — 大众四人麻将</title>
-  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="13" fill="%23101733"/><rect x="6" y="6" width="52" height="52" rx="10" fill="none" stroke="%23c9a35f" stroke-width="2.5"/><rect x="16.5" y="14" width="31" height="36" rx="5" fill="%23f7f1e1" stroke="%23c9a35f" stroke-width="2"/><text x="32" y="43" text-anchor="middle" font-size="27" font-family="serif" font-weight="700" fill="%23b0301f">中</text></svg>'>
+  <meta name="theme-color" content="#fffaf2">
+  <title>来把麻将 — 三分钟一把，随时随地开打</title>
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="15" fill="%23fff7ee"/><rect x="2" y="2" width="60" height="60" rx="13" fill="none" stroke="%23ff8a3d" stroke-width="3"/><rect x="15" y="12" width="34" height="40" rx="7" fill="%23fffdf9" stroke="%23e2c9a8" stroke-width="2"/><text x="32" y="44" text-anchor="middle" font-size="28" font-family="serif" font-weight="700" fill="%23ef6f1c">中</text></svg>'>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <div id="app">
+  <!-- ===== 主界面：轻量、亲民、简单易上手 =====
+       与 #app 平级，桌面自由布局；手机竖屏时与 #app 一起整体旋转 90°，
+       以便复用同一套「横屏逻辑视口」动效坐标（见 css 内注释）。 -->
+  <div id="home" class="home">
+    <div class="hm-bg" aria-hidden="true"></div>
+
+    <!-- 入场动画层：洗牌拼标题 -->
+    <div id="intro" class="intro" aria-hidden="true">
+      <div id="intro-tiles" class="intro-tiles"></div>
+      <div id="intro-title" class="intro-title">
+        <span class="it-ch" data-ch="来" style="--i:0">来</span><span class="it-ch" data-ch="把" style="--i:1">把</span><span class="it-ch" data-ch="麻" style="--i:2">麻</span><span class="it-ch" data-ch="将" style="--i:3">将</span>
+      </div>
+      <div id="intro-slogan" class="intro-slogan">三 分 钟 一 把</div>
+      <button id="intro-skip" class="intro-skip" type="button">跳过</button>
+    </div>
+
+    <!-- 主界面主体 -->
+    <div class="hm-wrap">
+      <header class="hm-head">
+        <div class="hm-logo" aria-hidden="true">
+          <span class="hm-logo-tile">中</span>
+        </div>
+        <h1 class="hm-brand">
+          <span class="hb-ch" data-ch="来">来</span><span class="hb-ch" data-ch="把">把</span><span class="hb-ch" data-ch="麻">麻</span><span class="hb-ch" data-ch="将">将</span>
+        </h1>
+        <p class="hm-slogan">三分钟一把 · 随时随地开打</p>
+      </header>
+
+      <div class="hm-cta">
+        <button id="btn-quick" class="hm-btn-primary" type="button">
+          <span class="qb-main">快速开局</span>
+          <span class="qb-sub">四人麻将 · 一分钟上手</span>
+        </button>
+        <button id="btn-resume" class="hm-btn-ghost hidden" type="button">
+          <span class="gb-main">继续上局</span>
+          <span class="gb-sub" id="resume-sub">东一局 · 牌山 122 张</span>
+        </button>
+      </div>
+
+      <nav class="hm-foot">
+        <button id="home-rules" class="hm-mini" type="button"><span class="mi-ic">📖</span>玩法规则</button>
+        <button id="home-sound" class="hm-mini" type="button"><span class="mi-ic" id="home-sound-ic">🔊</span><span id="home-sound-tx">音效开</span></button>
+      </nav>
+    </div>
+  </div>
+
+  <div id="app" class="hidden">
     <!-- 顶栏 -->
     <header id="topbar">
-      <div class="brand"><span class="brand-mark">🀄</span><span class="brand-name">雅麻将</span></div>
+      <div class="brand"><span class="brand-mark">🀄</span><span class="brand-name">来把麻将</span></div>
       <div class="round-info">
         <span id="round-name" class="round-name">东一局</span>
         <span id="wall-count" class="wall-count">牌山 122</span>
@@ -20,6 +66,7 @@
       <div class="top-actions">
         <button id="btn-sound" class="icon-btn" type="button" title="音效开关">🔊</button>
         <button id="btn-rules" class="icon-btn" type="button" title="玩法规则">📖</button>
+        <button id="btn-home" class="icon-btn" type="button" title="返回主界面">🏠</button>
         <button id="btn-restart" class="icon-btn" type="button" title="重新开局">🔄</button>
       </div>
     </header>
@@ -75,6 +122,7 @@
   <script src="js/ai.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/game.js"></script>
+  <script src="js/intro.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

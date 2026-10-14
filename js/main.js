@@ -1,5 +1,13 @@
 /**
  * main.js — 启动入口
+ *
+ * 启动流程：
+ *   1. 先把「主界面」（#home）亮出来 —— 它是 HTML 里静态写好的，首帧即可见，
+ *      不需要等任何脚本，保证「打开就有东西看」。
+ *   2. 在主界面上叠一层入场动画（#intro，洗牌拼标题）。动画只是覆盖层，
+ *      不阻塞任何东西；跳过 / 播完 / 兜底计时器三者谁先到就谁结束。
+ *   3. 用户点「快速开局」才真正创建对局控制器并启动（lazy，首屏零等待）；
+ *      点「继续上局」则直接复用那局控制器，跳过入场动画。
  */
 (function () {
   'use strict';
@@ -11,6 +19,9 @@
    * 视口的「高」「宽」。在部分移动端 / 移动模拟环境下 100vw / 100vh 的解析
    * 与实际可视视口不一致（innerHeight 会把地址栏等算进去），所以这里统一用
    * documentElement.clientWidth/Height 取可视区，注入成 px 变量供 CSS 使用。
+   *
+   * 主界面（#home）与动画层（#intro）在竖屏下也用同一套逻辑视口，
+   * 故它们与 #app 一样读取 --vw/--vh（见 style.css 的竖屏媒体查询）。
    */
   function bindViewportVars() {
     const apply = () => {
@@ -26,23 +37,167 @@
     }
   }
 
+  const $ = (id) => document.getElementById(id);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
   function boot() {
     bindViewportVars();
-    const game = new window.MJGame.GameController();
-    window.__mahjong = game; // 便于调试
-    game.start().catch(err => {
-      console.error('对局启动失败:', err);
-      const t = document.getElementById('toast');
-      if (t) { t.textContent = '出现错误：' + err.message; t.classList.remove('hidden'); }
+
+    const home = $('home');
+    const intro = $('intro');
+    const app = $('app');
+
+    /** 对局控制器（懒创建） */
+    let game = null;
+    /** 主界面是否已经开过一局（用于「继续上局」的可用性） */
+    let started = false;
+    /** 防重入：正在切换界面 */
+    let busy = false;
+
+    /* ---------- 入口状态 ---------- */
+    const btnQuick = $('btn-quick');
+    const btnResume = $('btn-resume');
+    const btnRules = $('home-rules');
+    const btnSound = $('home-sound');
+    const resumeSub = $('resume-sub');
+
+    /** 把对局里当前局况同步到「继续上局」的副标题 */
+    function syncResumeSub() {
+      if (!resumeSub || !game) return;
+      try {
+        const e = game.engine;
+        const name = (e && e.roundName) ? e.roundName : '进行中';
+        const wall = (e && typeof e.wallCount === 'number')
+          ? e.wallCount
+          : (e && e.wall ? e.wall.length : null);
+        resumeSub.textContent = name + (wall === null ? '' : ' · 牌山 ' + wall + ' 张');
+      } catch (err) {
+        resumeSub.textContent = '回到当前对局';
+      }
+    }
+
+    /** 只要开过一局，就把「继续上局」放出来（重开一局后依然是同一个控制器） */
+    function revealResume() {
+      if (!btnResume || !started) return;
+      syncResumeSub();
+      btnResume.classList.remove('hidden');
+    }
+
+    /* ---------- 界面切换 ---------- */
+    /** 主界面 → 牌桌：主界面淡出，然后交班 */
+    async function enterGame(resume) {
+      if (busy) return;
+      busy = true;
+
+      // 关掉还在播的入场动画，免得和转场打架
+      if (intro) { intro.classList.add('gone'); intro.innerHTML = '<div id="intro-tiles" class="intro-tiles"></div>'; }
+      if (home) home.classList.add('leaving');
+      await sleep(resume ? 60 : 420);
+
+      if (home) home.classList.add('hidden');
+      if (app) app.classList.remove('hidden');
+
+      if (!game) {
+        game = new window.MJGame.GameController();
+        window.__mahjong = game; // 便于调试 / 测试
+      }
+
+      if (!resume) {
+        started = true;
+        // start() 内部会引擎开局 + 跑完整局循环；这里不 await，
+        // 因为它直到整场打完才 resolve —— 主界面必须立刻可用。
+        game.start().catch((err) => {
+          console.error('对局启动失败:', err);
+          const t = $('toast');
+          if (t) { t.textContent = '出现错误：' + err.message; t.classList.remove('hidden'); }
+        });
+      }
+
+      busy = false;
+    }
+
+    /** 牌桌 → 主界面：停掉对局，回到入口（对局对象保留，可「继续上局」） */
+    function backToHome() {
+      if (busy) return;
+      busy = true;
+
+      if (game) {
+        game.running = false;             // 让进行中的局循环自行退出
+        game._runId++;                    // 使所有在途的 runId 失效
+        if (game.ui) {
+          if (game.ui.cancelPendingInteractions) game.ui.cancelPendingInteractions();
+          game.ui.closeModal();
+          game.ui.hideActions();
+        }
+      }
+      revealResume();
+
+      if (app) app.classList.add('hidden');
+      if (home) home.classList.remove('hidden', 'leaving');
+
+      busy = false;
+    }
+    window.__mjBackHome = backToHome;   // 供顶栏 / 结算弹窗调用
+
+    /* ---------- 主界面交互 ---------- */
+    if (btnQuick) btnQuick.addEventListener('click', () => {
+      if (game && game.ui && game.ui.sound) game.ui.sound.tick();
+      enterGame(false);
     });
-    // 首次交互解锁音频（浏览器策略）
-    const unlock = () => {
+    if (btnResume) btnResume.addEventListener('click', () => {
+      if (game && game.ui && game.ui.sound) game.ui.sound.tick();
+      enterGame(true);
+    });
+    if (btnRules) btnRules.addEventListener('click', () => {
+      // 复用对局里的规则弹窗（只依赖 DOM，不需要先开局）
+      if (!game) {
+        game = new window.MJGame.GameController();
+        window.__mahjong = game;
+      }
+      game.ui.showRules();
+    });
+    if (btnSound) btnSound.addEventListener('click', () => {
+      if (!game) {
+        game = new window.MJGame.GameController();
+        window.__mahjong = game;
+      }
       const s = game.ui.sound;
-      if (!s.muted) s.ensure();
+      s.muted = !s.muted;
+      const ic = $('home-sound-ic'), tx = $('home-sound-tx');
+      if (ic) ic.textContent = s.muted ? '🔇' : '🔊';
+      if (tx) tx.textContent = s.muted ? '音效关' : '音效开';
+      const topIc = $('btn-sound');
+      if (topIc) {
+        topIc.textContent = s.muted ? '🔇' : '🔊';
+        topIc.classList.toggle('muted', s.muted);
+      }
+      if (!s.muted) { s.ensure(); s.tick(); }
+      if (s.muted && window.speechSynthesis) {
+        try { window.speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+      }
+    });
+
+    /* 首次交互解锁音频（浏览器策略） */
+    const unlock = () => {
+      if (game && game.ui) {
+        const s = game.ui.sound;
+        if (!s.muted) s.ensure();
+      }
       document.removeEventListener('pointerdown', unlock);
     };
     document.addEventListener('pointerdown', unlock);
+
+    /* ---------- 播入场动画 ---------- */
+    if (intro && window.MJIntro) {
+      window.MJIntro.run(intro, { onDone: () => { /* 动画结束即可交互，无需额外动作 */ } });
+    } else if (intro) {
+      intro.classList.add('gone');
+    }
+
+    /* 调试用 */
+    window.__mjHome = { enterGame: enterGame, backToHome: backToHome };
   }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot);
   } else {

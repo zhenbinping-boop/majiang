@@ -58,6 +58,29 @@
       });
       ui.$('btn-rules').addEventListener('click', () => ui.showRules());
       ui.$('btn-restart').addEventListener('click', () => this.confirmRestart());
+      const home = ui.$('btn-home');
+      if (home) home.addEventListener('click', () => this.confirmHome());
+    }
+
+    /** 顶栏「返回主界面」：停掉当前对局，回到主界面（对局对象保留，可「继续上局」） */
+    confirmHome() {
+      const ui = this.ui;
+      const node = document.createDocumentFragment();
+      node.appendChild(ui.el('h2', '', '返 回 主 界 面'));
+      node.appendChild(ui.el('div', 'subtitle', '当前对局会暂停，可从主界面「继续上局」回来。'));
+      const btns = ui.el('div', 'modal-btns');
+      const yes = ui.el('button', 'act-btn', '返回');
+      yes.type = 'button';
+      yes.addEventListener('click', () => {
+        ui.sound.tick(); ui.closeModal();
+        if (typeof window.__mjBackHome === 'function') window.__mjBackHome();
+      });
+      const no = ui.el('button', 'act-btn pass', '继续打');
+      no.type = 'button';
+      no.addEventListener('click', () => { ui.sound.tick(); ui.closeModal(); });
+      btns.appendChild(yes); btns.appendChild(no);
+      node.appendChild(btns);
+      ui.openModal(node);
     }
 
     confirmRestart() {

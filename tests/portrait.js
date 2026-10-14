@@ -23,6 +23,37 @@ fs.mkdirSync(OUT, { recursive: true });
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+/**
+ * 从主界面进入牌桌并等到布局稳定。
+ * #home / #intro 是 fixed 覆盖层，进场后必须确实退场（hidden / gone），
+ * 否则它们会压住 #app，测出来的 rect 全是 0。
+ */
+async function enterTable(page) {
+  await page.waitForFunction(
+    () => window.__mjHome && window.MJIntro && document.getElementById('home'),
+    { timeout: 10000, polling: 60 }
+  );
+  // 入场动画可能仍在跑：点「快速开局」会直接终止它
+  await page.evaluate(() => {
+    const q = document.getElementById('btn-quick');
+    if (q) q.click();
+  });
+  await page.waitForFunction(
+    () => {
+      const home = document.getElementById('home');
+      const app = document.getElementById('app');
+      const intro = document.getElementById('intro');
+      const homeAway = !home || home.classList.contains('hidden');
+      const introAway = !intro || intro.classList.contains('gone') || intro.classList.contains('hidden');
+      const appUp = app && !app.classList.contains('hidden');
+      const hand = document.querySelectorAll('#hand .tile, #my-hand .tile, .hand .tile').length;
+      return homeAway && introAway && appUp && hand > 0;
+    },
+    { timeout: 10000, polling: 80 }
+  ).catch(() => {});
+  await sleep(120);
+}
+
 const CASES = [
   { name: 'portrait-390x844',  width: 390, height: 844, mode: 'portrait'  },
   { name: 'portrait-360x640',  width: 360, height: 640, mode: 'portrait'  },
@@ -50,6 +81,10 @@ const CASES = [
     });
     await page.goto(BASE + '/index.html', { waitUntil: 'networkidle0' });
     await sleep(900);
+
+    // 启动层已加入 #home 主界面 + #intro 入场动画，牌桌 (#app) 初始为 hidden。
+    // 本用例测的是牌桌布局，必须先把游戏拉起来、等两层退场后再测。
+    await enterTable(page);
 
     // ── 关键简化 ──
     // #app 旋转后仍铺满整个视口（coversViewport 已验证），故「某元素是否在视口内」
