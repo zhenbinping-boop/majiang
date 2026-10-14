@@ -34,16 +34,54 @@ const VIEWPORTS = [
 ];
 
 /* ---------- 页面内度量 ---------- */
+/* 手机竖屏时 #app 整体逆时针旋转 90° 呈现横屏，其子元素的 getBoundingClientRect
+   落在「旋转后的屏幕坐标系」里，与竖屏视口的长宽轴相反 —— 直接用它们做
+   溢出 / 碰撞 / 行数判断会全部失真（手牌在屏幕空间变成竖排，于是被误判成 14 行、
+   座位面板被误判压住手牌）。
+   这里把 #app 内部的度量统一换算回 #app 的**自身坐标系**（未旋转的本地坐标），
+   使全部几何断言与旋转无关，桌面 / 手机横屏 / 手机竖屏走同一套逻辑。 */
 function measure() {
-  const r = (sel) => { const e = document.querySelector(sel); if (!e) return null; const b = e.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) }; };
+  const app = document.getElementById('app');
+  const ROTATED = (() => {
+    const cs = getComputedStyle(app);
+    const m = cs.transform;
+    if (!m || m === 'none') return false;
+    const p = m.match(/matrix\(([^)]+)\)/);
+    if (!p) return false;
+    // 有旋转分量（b !== 0）且旋转角接近 ±90° 才算「整屏旋转」
+    const [a, b] = p[1].split(',').map(s => parseFloat(s.trim()));
+    return Math.abs(b) > 0.5 && Math.abs(a) < 0.5;
+  })();
+  const appRect = app.getBoundingClientRect();
+  // 旋转布局下：#app 本地宽 = 屏幕高(旋转后)，本地高 = 屏幕宽；平移量补偿掉这层映射。
+  const offX = ROTATED ? (appRect.width - appRect.left) : appRect.left;
+  const offY = ROTATED ? (appRect.height - appRect.top) : appRect.top;
+  // 屏幕坐标 → #app 本地坐标
+  const toLocal = (bx, by, bw, bh) => ROTATED
+    ? { x: offY - by - bh, y: offX - bx - bw, w: bh, h: bw }
+    : { x: bx - offX, y: by - offY, w: bw, h: bh };
+  const r = (sel) => {
+    const e = document.querySelector(sel); if (!e) return null;
+    const b = e.getBoundingClientRect();
+    return { ...toLocal(b.left, b.top, b.width, b.height), _r: b };
+  };
+  const box = (el) => { const b = el.getBoundingClientRect(); return toLocal(b.left, b.top, b.width, b.height); };
   const cnt = (sel) => document.querySelectorAll(sel).length;
   const hand = document.querySelector('#my-hand .tile');
   const overlap = (a, b) => !!a && !!b && a.x + a.w > b.x + 1 && b.x + b.w > a.x + 1 && a.y + a.h > b.y + 1 && b.y + b.h > a.y + 1;
+  // 旋转后的 #app 本地坐标系尺寸：宽 = 屏幕高，高 = 屏幕宽
+  const VW = ROTATED ? Math.round(appRect.height) : window.innerWidth;
+  const VH = ROTATED ? Math.round(appRect.width) : window.innerHeight;
+  // #app 本地内容是否溢出（旋转下 scrollW/scrollH 也会互换）
+  const rawSW = document.documentElement.scrollWidth, rawSH = document.documentElement.scrollHeight;
+  const locSW = ROTATED ? rawSH : rawSW, locSH = ROTATED ? rawSW : rawSH;
   return {
-    vw: window.innerWidth, vh: window.innerHeight,
-    scrollW: document.documentElement.scrollWidth, scrollH: document.documentElement.scrollHeight,
-    overflowX: document.documentElement.scrollWidth > window.innerWidth + 1,
-    overflowY: document.documentElement.scrollHeight > window.innerHeight + 1,
+    rotated: ROTATED,
+    vw: VW, vh: VH,
+    screenVw: window.innerWidth, screenVh: window.innerHeight,
+    scrollW: locSW, scrollH: locSH,
+    overflowX: locSW > VW + 1,
+    overflowY: locSH > VH + 1,
     tileBox: hand ? { w: Math.round(hand.getBoundingClientRect().width), h: Math.round(hand.getBoundingClientRect().height) } : null,
     riverTileBox: (() => { const t = document.querySelector('#river-0 .tile'); if (!t) return null; const b = t.getBoundingClientRect(); return { w: Math.round(b.width), h: Math.round(b.height) }; })(),
     /* 出牌区必须是"裸"的：没有半透明底板/描边/内阴影/蒙版，弃牌直接摆在桌布上 */
@@ -75,7 +113,7 @@ function measure() {
       r0: r('#river-0'), r1: r('#river-1'), r2: r('#river-2'), r3: r('#river-3'),
       panelTop: r('#panel-2'), panelLeft: r('#panel-3'), panelRight: r('#panel-1'),
     },
-    /* 四家牌河两两不得重叠；左右座位面板不得侵入中央区 */
+    /* 四家牌河两两不得重叠；左右座位面板不得侵入中央区（均在 #app 本地坐标下判断） */
     collide: (() => {
       const { r0, r1, r2, r3, rivers, panelLeft, panelRight, panelTop } = {
         r0: r('#river-0'), r1: r('#river-1'), r2: r('#river-2'), r3: r('#river-3'),
@@ -89,12 +127,12 @@ function measure() {
         top: !!rivers && !!panelTop && panelTop.y + panelTop.h > rivers.y + 1,
       };
     })(),
-    /* 纵向适配：body 有 overflow:hidden，溢出不会被 scrollHeight 发现，必须逐区块测底边 */
+    /* 纵向适配：body 有 overflow:hidden，溢出不会被 scrollHeight 发现，必须逐区块测底边。
+       本地坐标下 VH 即旋转前视口高（竖屏时 = 屏幕宽）。 */
     fit: (() => {
       const hand = r('#my-hand'), pl = r('#panel-3'), pr = r('#panel-1'), pt = r('#panel-2');
       const center = r('#center'), rivers = r('#rivers');
       if (!hand) return null;
-      const VH = window.innerHeight, VW = window.innerWidth;
       // 牌河是否超出中央区（含 1px 容差）
       const riversInCenter = (!center || !rivers) ? true
         : (rivers.y >= center.y - 1 && rivers.y + rivers.h <= center.y + center.h + 1
@@ -108,11 +146,12 @@ function measure() {
         riversInCenter,
       };
     })(),
-    /* 手牌行数：窄屏折成两行以放大牌面；宽屏必须保持单行 */
+    /* 手牌行数：窄屏折成两行以放大牌面；宽屏必须保持单行。
+       旋转布局下同样按本地坐标统计行数（屏幕空间会把单行误判成 14 行）。 */
     handRows: (() => {
       const els = [...document.querySelectorAll('#my-hand .tile')];
       if (!els.length) return 0;
-      return new Set(els.map(e => Math.round(e.getBoundingClientRect().top))).size;
+      return new Set(els.map(e => Math.round(box(e).y))).size;
     })(),
     counts: {
       myHand: cnt('#my-hand .tile'),

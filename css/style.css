@@ -761,37 +761,69 @@ html, body {
   #me-panel { gap: 10px; padding: 5px 10px; }
 }
 
-/* 窄屏手机 (竖屏)：14 张牌挤成一行只剩 ~23px，数字笔画糊成一团。
-   改为两行手牌 → 牌面可放大约 2 倍，保证牌面数字与花色清晰可辨。 */
-@media (max-width: 520px) {
+/* 手机竖屏：整屏旋转 90° 呈现横屏牌桌。
+   思路：#app 的宽高互换（宽=视口高、高=视口宽），再绕左上角逆时针转 90°，
+   最后沿 y 平移一个视口高，正好铺满竖屏 —— 视觉上等同「把手机向左横过来」：
+   顶栏落在屏幕左侧、手牌落在右侧。
+   尺寸用 --vwpx / --vhpx（main.js 按可视视口注入），不走 100vw/100vh：
+   移动端 vh 常把地址栏算进去，会让旋转后差几十像素而露边。
+   注意 transform 从右往左应用（先 rotate 后 translate），平移量必须用视口高。 */
+@media (max-width: 520px) and (orientation: portrait) {
+  #app {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--vhpx, 100vh);
+    height: var(--vwpx, 100vw);
+    transform: translateY(var(--vhpx, 100vh)) rotate(-90deg);
+    transform-origin: 0 0;
+  }
+  /* 这张表旋转后，"横向可用空间"来自竖屏的高 (--vhpx)。
+     牌宽 = min(横向铺得下 14 张, 纵向留白约束)，封顶 48px。 */
   :root {
-    /* 每行 7 张：视口宽减去牌桌内边距(12) + 牌托内边距与边框(22) + 13 张x1px 外边距(14) 后再除以 7 */
-    --tile-w: clamp(30px, calc((100vw - 56px) / 7), 50px);
-    /* 中央区被两侧座位夹住，出牌区收窄为「东西 3 列」，铭牌同步缩小，保证不越界 */
+    --tile-w: clamp(20px, min(calc((var(--vhpx, 100vh) - 64px) / 14), calc((var(--vwpx, 100vw) - 300px) / 1.45)), 48px);
     --rv-gap: 2px;
-    --rv-w: clamp(14px, calc((100vw - 245px) / 7), 26px);
+    --rv-w: clamp(13px, min(calc((var(--vhpx, 100vh) - 330px) / 16), calc((var(--vwpx, 100vw) - 110px) / 8)), 22px);
   }
-  #rivers { gap: 2px; }
-  #center-plaque { column-gap: 6px; }
+  #topbar { padding: 3px 10px; }
+  .brand-mark { font-size: 16px; }
+  .round-name { font-size: 12px; padding: 2px 9px; }
+  .icon-btn { width: 28px; height: 28px; font-size: 13px; border-radius: 8px; }
+  #table { padding: 3px 8px 4px; gap: 3px; grid-template-columns: minmax(96px, 0.7fr) minmax(0, 3fr) minmax(96px, 0.7fr); }
+  .seat-top .panel { padding: 4px 8px; gap: 3px; }
+  .seat-left .panel, .seat-right .panel { padding: 4px 5px; gap: 3px; }
+  .seat-backs.v .tile { margin-top: calc(var(--tile-h-sm) * -0.22); }
+  .avatar { width: 22px; height: 22px; font-size: 11px; border-width: 1.5px; }
+  .seat-info { gap: 5px; }
+  .seat-name { font-size: 11px; }
+  .seat-meta { font-size: 9px; gap: 4px; flex-wrap: nowrap; }
+  .seat-left .seat-meta, .seat-right .seat-meta { flex-wrap: nowrap; }
+  .badge { font-size: 9px; padding: 1px 4px; letter-spacing: 0; }
+  #me-panel { padding: 3px 12px; gap: 10px; }
+  .hand { padding: 4px 10px 5px; min-height: calc(var(--tile-h) + 11px); }
+  #center { gap: 3px; }
+  #rivers {
+    gap: 2px;
+    grid-template-rows: minmax(0, 0.85fr) minmax(0, 1.7fr) minmax(0, 0.85fr);
+  }
+  #center-plaque { column-gap: 9px; row-gap: 1px; }
   .cp-mark { font-size: 14px; }
-  .cp-core .cp-wind { font-size: 20px; }
-  .cp-core .cp-round { font-size: 11px; letter-spacing: 1px; }
-  .cp-core .cp-wall { font-size: 9px; }
+  .cp-core .cp-wind { font-size: 22px; }
+  .cp-core .cp-round { font-size: 11px; letter-spacing: 1px; margin-top: 2px; }
+  .cp-core .cp-wall { font-size: 9px; margin-top: 1px; }
+  #turn-banner { font-size: 11px; padding: 2px 12px; min-height: 20px; }
+  #action-bar { bottom: calc(var(--tile-h) + 16px); }
+  #action-flash { font-size: 48px; }
+  #action-flash.k-win { font-size: 58px; }
   .river-n, .river-s { width: calc(6 * (var(--rv-w) + var(--rv-gap)) - var(--rv-gap)); }
-  .river-w, .river-e { width: calc(3 * (var(--rv-w) + var(--rv-gap)) - var(--rv-gap)); }
-  .hand {
-    flex-wrap: wrap;
-    align-content: flex-end;
-    row-gap: 2px;
-    width: min(100%, calc(7 * (var(--tile-w) + 2px) + 24px));
-    padding: 6px 10px 7px;
-    min-height: calc(2 * var(--tile-h) + 20px);
-  }
-  #action-bar { bottom: calc(2 * var(--tile-h) + 30px); }
+  .river-w, .river-e { width: calc(4 * (var(--rv-w) + var(--rv-gap)) - var(--rv-gap)); }
+  /* 旋转后弹窗与 toast 需要独立的坐标参照（它们走 fixed 定位，不受 #app 旋转影响） */
+  .modal { padding: 14px; }
+  .modal-box { width: min(86vh, 560px); max-height: 88vw; }
 }
 
 /* 横屏手机 / 矮屏：纵向空间紧张，收紧空白、压缩牌河与牌墙，保证整桌都在视口内 */
-@media (max-height: 520px) {
+@media (max-height: 520px) and (orientation: landscape) {
   :root {
     --tile-w: clamp(20px, min(calc((100vw - 64px) / 14), calc((100vh - 300px) / 1.45)), 48px);
     /* 横向宽裕、纵向吃紧：出牌区按横向给足尺寸，纵向靠加高东西行来容纳 */
