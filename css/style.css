@@ -762,12 +762,12 @@ html, body {
 }
 
 /* 手机竖屏：整屏旋转 90° 呈现横屏牌桌。
-   思路：#app 的宽高互换（宽=视口高、高=视口宽），再绕左上角逆时针转 90°，
-   最后沿 y 平移一个视口高，正好铺满竖屏 —— 视觉上等同「把手机向左横过来」：
-   顶栏落在屏幕左侧、手牌落在右侧。
+   思路：#app 的宽高互换（宽=视口高、高=视口宽），再绕左上角**顺时针**转 90°，
+   最后沿 x 平移一个视口宽，正好铺满竖屏 —— 视觉上等同「把手机向右横过来」：
+   顶栏落在屏幕右侧、手牌落在左侧。
    尺寸用 --vwpx / --vhpx（main.js 按可视视口注入），不走 100vw/100vh：
    移动端 vh 常把地址栏算进去，会让旋转后差几十像素而露边。
-   注意 transform 从右往左应用（先 rotate 后 translate），平移量必须用视口高。 */
+   注意 transform 从右往左应用（先 rotate 后 translate），平移量必须用视口宽。 */
 @media (max-width: 520px) and (orientation: portrait) {
   #app {
     position: absolute;
@@ -775,11 +775,14 @@ html, body {
     left: 0;
     width: var(--vhpx, 100vh);
     height: var(--vwpx, 100vw);
-    transform: translateY(var(--vhpx, 100vh)) rotate(-90deg);
+    transform: translateX(var(--vwpx, 100vw)) rotate(90deg);
     transform-origin: 0 0;
   }
-  /* 这张表旋转后，"横向可用空间"来自竖屏的高 (--vhpx)。
-     牌宽 = min(横向铺得下 14 张, 纵向留白约束)，封顶 48px。 */
+  /* 内层尺寸 = 横屏矮屏那套。旋转后局部坐标系里：
+       局部「宽」≡ 屏幕高（--vhpx，通常是 844）≙ 横屏时的 100vw
+       局部「高」≡ 屏幕宽（--vwpx，通常是 390）≙ 横屏时的 100vh
+     所以下面所有横屏用的 100vw / 100vh 一律换成 var(--vhpx) / var(--vwpx)，
+     这样竖屏旋转后的牌桌与 844×390 横屏视觉完全一致（只是整体转了 90°）。 */
   :root {
     --tile-w: clamp(20px, min(calc((var(--vhpx, 100vh) - 64px) / 14), calc((var(--vwpx, 100vw) - 300px) / 1.45)), 48px);
     --rv-gap: 2px;
@@ -789,7 +792,7 @@ html, body {
   .brand-mark { font-size: 16px; }
   .round-name { font-size: 12px; padding: 2px 9px; }
   .icon-btn { width: 28px; height: 28px; font-size: 13px; border-radius: 8px; }
-  #table { padding: 3px 8px 4px; gap: 3px; grid-template-columns: minmax(96px, 0.7fr) minmax(0, 3fr) minmax(96px, 0.7fr); }
+  #table { padding: 3px 8px 4px; gap: 3px; grid-template-columns: minmax(108px, 0.7fr) minmax(0, 3fr) minmax(108px, 0.7fr); }
   .seat-top .panel { padding: 4px 8px; gap: 3px; }
   .seat-left .panel, .seat-right .panel { padding: 4px 5px; gap: 3px; }
   .seat-backs.v .tile { margin-top: calc(var(--tile-h-sm) * -0.22); }
@@ -811,15 +814,47 @@ html, body {
   .cp-core .cp-wind { font-size: 22px; }
   .cp-core .cp-round { font-size: 11px; letter-spacing: 1px; margin-top: 2px; }
   .cp-core .cp-wall { font-size: 9px; margin-top: 1px; }
-  #turn-banner { font-size: 11px; padding: 2px 12px; min-height: 20px; }
-  #action-bar { bottom: calc(var(--tile-h) + 16px); }
-  #action-flash { font-size: 48px; }
+  /* 回合提示（「点击手牌出牌…」）：中央区的一行，整屏旋转后会变竖条压住牌桌。
+     反旋 -90° 恢复水平；再绝对定位到屏幕上方空白带（left 控屏幕 y、top 控屏幕 x），
+     避开中央的操作栏。 */
+  #turn-banner {
+    position: absolute;
+    left: 2%; top: 56%; bottom: auto;
+    transform: translate(-50%, -50%) rotate(-90deg);
+    transform-origin: center center;
+    font-size: 10px; padding: 2px 10px; min-height: 0;
+    max-width: calc(var(--vwpx, 100vw) - 12px);
+    white-space: nowrap;
+    z-index: 22;
+  }
+  /* 操作栏：局部 flex column（竖排）+ 反旋 -90°，在屏幕上呈现为一条**竖直胶囊**，
+     按钮文字仍保持水平可读。这样它很窄（~50px），能塞进「手牌」与「中央牌河」之间的
+     竖缝，不必浮在屏幕正中压住局势铭牌。left 控屏幕 y（靠上，避开铭牌带 379..465）、
+     top 控屏幕 x（50% ≈ 紧贴手牌右缘）。 */
+  #action-bar {
+    left: 30%; top: 50%; bottom: auto;
+    animation: none;
+    transform: translate(-50%, -50%) rotate(-90deg);
+    transform-origin: center center;
+    flex-direction: column;
+    padding: 4px 6px; gap: 4px;
+    max-height: calc(var(--vhpx, 100vh) - 24px);
+    z-index: 60;
+  }
+  #action-bar .act-btn { padding: 5px 9px; font-size: 12px; letter-spacing: 1px; min-width: 44px; }
+  /* 浮字（吃碰杠胡）：横排大字，反旋保持水平 */
+  #action-flash { font-size: 48px; letter-spacing: 4px; }
   #action-flash.k-win { font-size: 58px; }
+  #action-flash {
+    transform: translate(-50%, -50%) rotate(-90deg);
+    transform-origin: center center;
+  }
+  #action-flash.k-win { transform: translate(-50%, -50%) rotate(-90deg); }
+  /* 牌河列数：局部宽（=屏幕高）宽裕，纵向吃紧 —— 与横屏矮屏一致，N/S 收成 6 列、E/W 收成 4 列 */
   .river-n, .river-s { width: calc(6 * (var(--rv-w) + var(--rv-gap)) - var(--rv-gap)); }
   .river-w, .river-e { width: calc(4 * (var(--rv-w) + var(--rv-gap)) - var(--rv-gap)); }
-  /* 旋转后弹窗与 toast 需要独立的坐标参照（它们走 fixed 定位，不受 #app 旋转影响） */
   .modal { padding: 14px; }
-  .modal-box { width: min(86vh, 560px); max-height: 88vw; }
+  .modal-box { width: min(86vw, 560px); max-height: 92vh; }
 }
 
 /* 横屏手机 / 矮屏：纵向空间紧张，收紧空白、压缩牌河与牌墙，保证整桌都在视口内 */
@@ -858,5 +893,6 @@ html, body {
   .cp-core .cp-wind { font-size: 22px; }
   .cp-core .cp-round { font-size: 11px; letter-spacing: 1px; margin-top: 2px; }
   .cp-core .cp-wall { font-size: 9px; margin-top: 1px; }
-  #action-bar { bottom: calc(var(--tile-h) + 16px); }
+  /* 矮屏纵向紧张：操作栏再抬高一点，避免压到手牌牌面 */
+  #action-bar { bottom: calc(var(--tile-h) + 26px); }
 }

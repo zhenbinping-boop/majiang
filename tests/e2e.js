@@ -34,12 +34,18 @@ const VIEWPORTS = [
 ];
 
 /* ---------- 页面内度量 ---------- */
-/* 手机竖屏时 #app 整体逆时针旋转 90° 呈现横屏，其子元素的 getBoundingClientRect
-   落在「旋转后的屏幕坐标系」里，与竖屏视口的长宽轴相反 —— 直接用它们做
-   溢出 / 碰撞 / 行数判断会全部失真（手牌在屏幕空间变成竖排，于是被误判成 14 行、
-   座位面板被误判压住手牌）。
+/* 手机竖屏时 #app 整体顺时针旋转 90°（向右横看）呈现横屏，其子元素的
+   getBoundingClientRect 落在「旋转后的屏幕坐标系」里，与竖屏视口的长宽轴相反 ——
+   直接用它们做溢出 / 碰撞 / 行数判断会全部失真（手牌在屏幕空间变成竖排，
+   于是被误判成 14 行、座位面板被误判压住手牌）。
    这里把 #app 内部的度量统一换算回 #app 的**自身坐标系**（未旋转的本地坐标），
-   使全部几何断言与旋转无关，桌面 / 手机横屏 / 手机竖屏走同一套逻辑。 */
+   使全部几何断言与旋转无关，桌面 / 手机横屏 / 手机竖屏走同一套逻辑。
+
+   顺时针映射（transform-origin: 0 0，transform = translateX(W) rotate(90deg)）：
+     局部 (lx, ly) → 屏幕 (appLeft + appW - ly, appTop + lx)
+   反解：
+     lx = screenY - appTop
+     ly = appLeft + appW - screenX                                */
 function measure() {
   const app = document.getElementById('app');
   const ROTATED = (() => {
@@ -53,12 +59,14 @@ function measure() {
     return Math.abs(b) > 0.5 && Math.abs(a) < 0.5;
   })();
   const appRect = app.getBoundingClientRect();
-  // 旋转布局下：#app 本地宽 = 屏幕高(旋转后)，本地高 = 屏幕宽；平移量补偿掉这层映射。
-  const offX = ROTATED ? (appRect.width - appRect.left) : appRect.left;
-  const offY = ROTATED ? (appRect.height - appRect.top) : appRect.top;
+  // 旋转布局下：#app 局部「宽」= 屏幕高(appRect.height)、局部「高」= 屏幕宽(appRect.width)
+  //   顺时针：lx = screenY - appRect.top，ly = (appRect.left + appRect.width) - screenX
+  // 非旋转布局：直接减去 appRect 的左上角即可。
+  const offX = ROTATED ? appRect.top : appRect.left;
+  const offY = ROTATED ? (appRect.left + appRect.width) : appRect.top;
   // 屏幕坐标 → #app 本地坐标
   const toLocal = (bx, by, bw, bh) => ROTATED
-    ? { x: offY - by - bh, y: offX - bx - bw, w: bh, h: bw }
+    ? { x: by - offX, y: offY - bx - bw, w: bh, h: bw }
     : { x: bx - offX, y: by - offY, w: bw, h: bh };
   const r = (sel) => {
     const e = document.querySelector(sel); if (!e) return null;

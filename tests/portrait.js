@@ -3,10 +3,10 @@
  *
  * 校验点：
  *   1. 竖屏视口下 #app 的 getBoundingClientRect 铺满视口（旋转后视觉占满）
- *   2. 旋转角确为 90°
+ *   2. 旋转角确为 +90°（顺时针 = 向右横看：顶栏落右、手牌落左）
  *   3. 手牌不被裁切、不与出牌区/操作栏重叠
  *   4. 牌桌四家座位与出牌区均在视口内
- *   5. 弹窗（fixed）在旋转状态下仍居中且完整可见
+ *   5. 弹窗（fixed，在 #app 之外，不随旋转）在旋转状态下仍居中且完整可见
  *   6. 横屏视口不受影响（回归）
  *
  * 运行：NODE_PATH=<managed node workspace>/node_modules node tests/portrait.js
@@ -103,6 +103,11 @@ const CASES = [
         handCount: tiles.length,
         tileW: tiles.length ? Math.round(tiles[0].width) : 0,
         tileH: tiles.length ? Math.round(tiles[0].height) : 0,
+        // 屏幕坐标系下的方位：顺时针旋转后顶栏应在右半屏、手牌应在左半屏
+        topbarOnRight: (() => { const t = document.getElementById('topbar'); if (!t) return null;
+          const b = t.getBoundingClientRect(); return (b.left + b.right) / 2 > vw / 2; })(),
+        handOnLeft: (() => { const h = document.querySelector('#my-hand'); if (!h) return null;
+          const b = h.getBoundingClientRect(); return (b.left + b.right) / 2 < vw / 2; })(),
         offscreen, overlap, outOfView,
       };
     });
@@ -129,8 +134,44 @@ const CASES = [
     });
     await sleep(300);
 
+    /* 操作栏（轮到自己出牌时出现）：
+       · 竖屏（整屏旋转）下刻意做成「竖直胶囊」：容器竖排 (h > w)，但每个按钮仍横向
+         (w > h) 以保证文字水平可读 —— 这样它能塞进手牌与牌河之间的竖缝，不压铭牌。
+       · 横屏下是普通的水平横排胶囊。
+       两种形态都必须：完整落在视口内、不盖住手牌牌面、不压局势铭牌。 */
+    const actionBar = await page.evaluate(() => {
+      const bar = document.getElementById('action-bar');
+      bar.classList.remove('hidden');
+      bar.innerHTML = ['吃', '碰', '杠', '胡', '过']
+        .map(t => '<button class="act-btn">' + t + '</button>').join('');
+      const b = bar.getBoundingClientRect();
+      const vw = window.innerWidth, vh = window.innerHeight;
+      // 与「手牌牌面」比对（牌托有内边距，允许压到牌托边缘，但不能盖住牌）
+      const coversTile = [...document.querySelectorAll('#my-hand .tile')].some(t => {
+        const r = t.getBoundingClientRect();
+        return !(r.right < b.left || r.left > b.right || r.bottom < b.top || r.top > b.bottom);
+      });
+      const plaque = document.getElementById('center-plaque');
+      const pb = plaque ? plaque.getBoundingClientRect() : null;
+      const coversPlaque = pb
+        ? !(b.right < pb.left || b.left > pb.right || b.bottom < pb.top || b.top > pb.bottom)
+        : false;
+      const btn = bar.querySelector('.act-btn');
+      const bb = btn ? btn.getBoundingClientRect() : null;
+      return {
+        visible: true,
+        w: Math.round(b.width), h: Math.round(b.height),
+        vertical: b.height > b.width,                    // 竖屏下应为竖直胶囊
+        horizontal: b.width > b.height,                  // 横屏下应为横排
+        btnHorizontal: bb ? bb.width > bb.height : null, // 按钮横向 = 文字水平可读
+        inViewport: b.left >= -1 && b.top >= -1 && b.right <= vw + 1 && b.bottom <= vh + 1,
+        coversTile, coversPlaque,
+      };
+    });
+    await page.evaluate(() => document.getElementById('action-bar').classList.add('hidden'));
+
     await page.screenshot({ path: path.join(OUT, 'portrait-' + c.name + '.png') });
-    results.push({ c, r, modal });
+    results.push({ c, r, modal, actionBar });
   }
 
   await browser.close();
@@ -138,14 +179,14 @@ const CASES = [
   /* ---------- 输出 ---------- */
   console.log('\n============ 手机竖屏旋转验证 ============\n');
   let allOk = true;
-  for (const { c, r, modal } of results) {
+  for (const { c, r, modal, actionBar } of results) {
     const isPortrait = c.mode === 'portrait';
     let rowOk = true;
     const mark = (v) => { if (!v) rowOk = false; return v ? '✓' : '✗'; };
 
     console.log('【' + c.name + '】 视口 ' + r.vw + '×' + r.vh);
     if (isPortrait) {
-      console.log('  旋转角        : ' + r.deg + '°  ' + mark(r.deg === -90) + ' (逆时针：顶栏落左 / 手牌落右)');
+      console.log('  旋转角        : ' + r.deg + '°  ' + mark(r.deg === 90) + ' (顺时针：顶栏落右 / 手牌落左)');
       console.log('  尺寸互换      : ' + r.cssW + '×' + r.cssH + '  ' + mark(r.appFills) + ' (宽=视口高 ' + r.vh + ', 高=视口宽 ' + r.vw + ')');
       console.log('  铺满视口      : ' + mark(r.coversViewport) + '  视觉盒 ' + r.appRect.w + '×' + r.appRect.h);
     } else {
@@ -155,7 +196,20 @@ const CASES = [
     console.log('  手牌越界      : ' + r.offscreen + '  ' + mark(r.offscreen === 0));
     console.log('  手牌压操作栏  : ' + r.overlap + '  ' + mark(r.overlap === 0));
     console.log('  座位/牌河越界 : ' + r.outOfView + '  ' + mark(r.outOfView === 0));
+    if (isPortrait) {
+      console.log('  方位(向右看)  : 顶栏在右' + mark(r.topbarOnRight) + ' 手牌在左' + mark(r.handOnLeft));
+    }
     console.log('  弹窗          : ' + (modal.open ? (modal.w + '×' + modal.h + ' 完整' + mark(modal.fullyVisible) + ' 居中' + mark(modal.centered)) : '未打开'));
+    if (actionBar) {
+      if (isPortrait) {
+        console.log('  操作栏        : ' + actionBar.w + '×' + actionBar.h + ' 竖排' + mark(actionBar.vertical) +
+          ' 按钮横向' + mark(actionBar.btnHorizontal) + ' 在视口内' + mark(actionBar.inViewport) +
+          ' 不盖牌面' + mark(!actionBar.coversTile) + ' 不压铭牌' + mark(!actionBar.coversPlaque));
+      } else {
+        console.log('  操作栏        : ' + actionBar.w + '×' + actionBar.h + ' 横排' + mark(actionBar.horizontal) +
+          ' 在视口内' + mark(actionBar.inViewport) + ' 不盖牌面' + mark(!actionBar.coversTile));
+      }
+    }
     console.log('  → ' + (rowOk ? '通过 ✓' : '未通过 ✗'));
     console.log('');
     if (!rowOk) allOk = false;
