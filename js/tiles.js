@@ -61,36 +61,51 @@
 
   /* --------------- 牌面底框 --------------- */
   function defs() {
-    // 牌面渐变、立体斜面与背光内阴影定义（纯合法 SVG XML，无内联 C 注释）
+    // 骨瓷牌体 + 阴刻雕花的光影定义（纯合法 SVG XML，无内联 C 注释）
     return (
       '<defs>' +
-      '<linearGradient id="mjFace" x1="0" y1="0" x2="0.18" y2="1">' +
-      '<stop offset="0" stop-color="#fffdf7"/><stop offset=".42" stop-color="#f6f0e0"/>' +
-      '<stop offset="1" stop-color="#e5dcc4"/>' +
+      // 外层骨瓷基底：顶亮 → 中暖 → 底暗，模拟玉石/象牙的通透受光
+      '<linearGradient id="mjBody" x1="0" y1="0" x2="0.16" y2="1">' +
+      '<stop offset="0" stop-color="#fffef9"/><stop offset=".44" stop-color="#f3ebd8"/>' +
+      '<stop offset="1" stop-color="#d5c7a8"/>' +
       '</linearGradient>' +
-      '<linearGradient id="mjRim" x1="0" y1="0" x2="0" y2="1">' +
-      '<stop offset="0" stop-color="#e8cb92"/><stop offset=".42" stop-color="#c2a163"/>' +
-      '<stop offset=".72" stop-color="#a2803f"/><stop offset="1" stop-color="#7a5d2c"/>' +
+      // 牌肚受光内斜面台面：更细腻的象牙白
+      '<linearGradient id="mjFace" x1="0" y1="0" x2="0.14" y2="1">' +
+      '<stop offset="0" stop-color="#fffdf7"/><stop offset=".5" stop-color="#f7f1e1"/>' +
+      '<stop offset="1" stop-color="#e9dfc8"/>' +
       '</linearGradient>' +
-      '<linearGradient id="mjBevel" x1="0" y1="0" x2="0.22" y2="1">' +
-      '<stop offset="0" stop-color="#ffffff" stop-opacity=".62"/>' +
-      '<stop offset=".16" stop-color="#ffffff" stop-opacity=".06"/>' +
-      '<stop offset=".78" stop-color="#6b5a35" stop-opacity="0"/>' +
-      '<stop offset="1" stop-color="#5c4a26" stop-opacity=".34"/>' +
+      // 圆润 R 角的柔和内凹暗边（顶部微亮、底部微暗，制造倒角弧度）
+      '<linearGradient id="mjBevel" x1="0" y1="0" x2="0.2" y2="1">' +
+      '<stop offset="0" stop-color="#ffffff" stop-opacity=".66"/>' +
+      '<stop offset=".18" stop-color="#ffffff" stop-opacity=".05"/>' +
+      '<stop offset=".8" stop-color="#7a6840" stop-opacity="0"/>' +
+      '<stop offset="1" stop-color="#6a5730" stop-opacity=".3"/>' +
       '</linearGradient>' +
+      // 牌面下缘内投影：纹样区「凹进」牌面
       '<linearGradient id="mjInnerShade" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0" stop-color="#3b2f16" stop-opacity="0"/>' +
-      '<stop offset="1" stop-color="#3b2f16" stop-opacity=".22"/>' +
+      '<stop offset="1" stop-color="#3b2f16" stop-opacity=".2"/>' +
       '</linearGradient>' +
-      '<linearGradient id="mjBack" x1="0" y1="0" x2="0.4" y2="1">' +
-      '<stop offset="0" stop-color="#b8472f"/><stop offset=".46" stop-color="#932e21"/>' +
-      '<stop offset="1" stop-color="#5c1811"/>' +
+      // 阴刻描边（用于雕花文字/纹样的立体高光-暗影）
+      '<linearGradient id="mjEngrave" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#ffffff" stop-opacity=".85"/>' +
+      '<stop offset="1" stop-color="#ffffff" stop-opacity="0"/>' +
       '</linearGradient>' +
-      '<linearGradient id="mjBackBevel" x1="0" y1="0" x2="0.24" y2="1">' +
-      '<stop offset="0" stop-color="#ffffff" stop-opacity=".34"/>' +
-      '<stop offset=".2" stop-color="#ffffff" stop-opacity=".04"/>' +
+      // 牌背：琥珀朱红双层玉质，带顶缘受光棱线
+      '<linearGradient id="mjBack" x1="0" y1="0" x2="0.36" y2="1">' +
+      '<stop offset="0" stop-color="#c04e33"/><stop offset=".44" stop-color="#9a3122"/>' +
+      '<stop offset="1" stop-color="#5e1710"/>' +
+      '</linearGradient>' +
+      '<linearGradient id="mjBackBevel" x1="0" y1="0" x2="0.22" y2="1">' +
+      '<stop offset="0" stop-color="#ffffff" stop-opacity=".4"/>' +
+      '<stop offset=".2" stop-color="#ffffff" stop-opacity=".05"/>' +
       '<stop offset=".8" stop-color="#2a0806" stop-opacity="0"/>' +
-      '<stop offset="1" stop-color="#2a0806" stop-opacity=".4"/>' +
+      '<stop offset="1" stop-color="#2a0806" stop-opacity=".42"/>' +
+      '</linearGradient>' +
+      // 竹翠牌背（用于区分牌墙层次，与朱红牌背互补）
+      '<linearGradient id="mjBackJade" x1="0" y1="0" x2="0.36" y2="1">' +
+      '<stop offset="0" stop-color="#5a9a72"/><stop offset=".44" stop-color="#2f6b48"/>' +
+      '<stop offset="1" stop-color="#153a24"/>' +
       '</linearGradient>' +
       '<linearGradient id="mjShine" x1="0" y1="0" x2="1" y2="1">' +
       '<stop offset="0" stop-color="#ffffff" stop-opacity=".5"/>' +
@@ -100,40 +115,71 @@
     );
   }
 
-  /** 象牙牌面：鎏金外框 + 立体斜面 + 内细线 + 顶部高光 */
+  /** 骨瓷圆润倒角牌体 + 阴刻雕花台面（不再是扑克风鎏金细框） */
   function faceFrame(inner) {
     return (
       '<svg viewBox="0 0 ' + VW + ' ' + VH + '" xmlns="http://www.w3.org/2000/svg" class="tile-svg">' +
       defs() +
-      // 鎏金外框（下缘渐深，形成牌缘的厚度）
-      '<rect x="0.8" y="0.8" width="' + (VW - 1.6) + '" height="' + (VH - 1.6) + '" rx="6.2" fill="url(#mjRim)"/>' +
-      // 象牙牌面
-      '<rect x="2.6" y="2.4" width="' + (VW - 5.2) + '" height="' + (VH - 4.8) + '" rx="4.8" fill="url(#mjFace)"/>' +
-      // 立体斜面：上缘受光、下缘背光
-      '<rect x="2.6" y="2.4" width="' + (VW - 5.2) + '" height="' + (VH - 4.8) + '" rx="4.8" fill="url(#mjBevel)"/>' +
-      // 牌面顶端受光棱线
-      '<path d="M6.6 5.2 H' + (VW - 6.6) + '" stroke="#ffffff" stroke-opacity=".8" stroke-width="1" stroke-linecap="round"/>' +
-      // 内细金线
-      '<rect x="4.7" y="4.5" width="' + (VW - 9.4) + '" height="' + (VH - 9) + '" rx="3.2" fill="none" stroke="' + GOLD + '" stroke-opacity=".3" stroke-width="0.6"/>' +
+      // 外层骨瓷倒角基底
+      '<rect x="0.5" y="0.5" width="' + (VW - 1) + '" height="' + (VH - 1) + '" rx="6.5" fill="url(#mjBody)" stroke="#cab996" stroke-width="0.7"/>' +
+      // 牌肚受光内斜面（象牙白台面）
+      '<rect x="2.2" y="2" width="' + (VW - 4.4) + '" height="' + (VH - 4) + '" rx="5.2" fill="url(#mjFace)"/>' +
+      // 四周柔和内凹暗边 —— 模拟圆润 R 角倒角
+      '<rect x="2.2" y="2" width="' + (VW - 4.4) + '" height="' + (VH - 4) + '" rx="5.2" fill="url(#mjBevel)"/>' +
+      // 牌面顶端受光高光弧线
+      '<path d="M6 3.2 H' + (VW - 6) + '" stroke="#ffffff" stroke-opacity=".92" stroke-width="1.3" stroke-linecap="round"/>' +
       // 顶部高光
-      '<rect x="2.6" y="2.4" width="' + (VW - 5.2) + '" height="26" rx="4.8" fill="url(#mjShine)" opacity=".55"/>' +
-      // 牌面下缘内投影：让纹样区显得“凹进”牌面（置于纹样之下，不压暗数字）
-      '<rect x="2.6" y="' + (VH - 20) + '" width="' + (VW - 5.2) + '" height="17.6" rx="4.4" fill="url(#mjInnerShade)"/>' +
+      '<rect x="2.2" y="2" width="' + (VW - 4.4) + '" height="24" rx="5.2" fill="url(#mjShine)" opacity=".5"/>' +
+      // 牌面下缘内投影：纹样区「凹进」牌面（置于纹样之下，不压暗数字）
+      '<rect x="2.2" y="' + (VH - 19) + '" width="' + (VW - 4.4) + '" height="16.8" rx="4.6" fill="url(#mjInnerShade)"/>' +
       inner +
       '</svg>'
     );
   }
 
-  /** 加粗描边后的文字，小尺寸下也清晰 */
-  function glyph(ch, o) {
+  /** 阴刻描边：沿字形/纹样钩一圈上亮下暗，制造「凹刻入骨瓷」的立体深邃感 */
+  function engrave(ch, o) {
+    const x = o.x || VW / 2;
+    const fam = o.font || FACE_FONT;
+    const weight = o.weight || 700;
+    const size = o.size;
     return (
-      '<text x="' + (o.x || VW / 2) + '" y="' + o.y + '" text-anchor="middle" ' +
-      'font-family="' + (o.font || FACE_FONT) + '" font-size="' + o.size + '" ' +
-      'font-weight="' + (o.weight || 700) + '" fill="' + o.color + '" ' +
-      'stroke="' + o.color + '" stroke-width="' + (o.stroke === undefined ? 0.7 : o.stroke) + '" ' +
+      // 底部反光 (受光面)：稍微下移的浅色描边
+      '<text x="' + x + '" y="' + (o.y + 0.75) + '" text-anchor="middle" ' +
+      'font-family="' + fam + '" font-size="' + size + '" font-weight="' + weight + '" ' +
+      'fill="#ffffff" fill-opacity=".4" stroke="#ffffff" stroke-opacity=".4" stroke-width="0.5" ' +
       'paint-order="stroke" stroke-linejoin="round"' +
       (o.spacing ? ' letter-spacing="' + o.spacing + '"' : '') +
+      '>' + ch + '</text>' +
+      // 顶部内暗影：稍微上移的深色描边
+      '<text x="' + x + '" y="' + (o.y - 0.85) + '" text-anchor="middle" ' +
+      'font-family="' + fam + '" font-size="' + size + '" font-weight="' + weight + '" ' +
+      'fill="#3b2f16" fill-opacity=".26" stroke="#3b2f16" stroke-opacity=".3" stroke-width="0.5" ' +
+      'paint-order="stroke" stroke-linejoin="round"' +
       '>' + ch + '</text>'
+    );
+  }
+
+  /** 加粗描边后的文字，小尺寸下也清晰；带阴刻高光/暗影，呈现「凹刻入骨瓷并填漆」的立体感 */
+  function glyph(ch, o) {
+    const x = o.x || VW / 2;
+    const fam = o.font || FACE_FONT;
+    const size = o.size;
+    const weight = o.weight || 700;
+    const base =
+      'text-anchor="middle" font-family="' + fam + '" font-size="' + size + '" font-weight="' + weight + '" ' +
+      'paint-order="stroke" stroke-linejoin="round"' +
+      (o.spacing ? ' letter-spacing="' + o.spacing + '"' : '');
+    return (
+      // 阴刻底部反光（受光面）：浅色上提一点
+      '<text x="' + x + '" y="' + (o.y - 0.6) + '" ' + base +
+      ' fill="#ffffff" fill-opacity=".34" stroke="#ffffff" stroke-opacity=".34" stroke-width="' + ((o.stroke === undefined ? 0.7 : o.stroke) + 0.3) + '">' + ch + '</text>' +
+      // 阴刻顶部内暗影：深色下沉一点
+      '<text x="' + x + '" y="' + (o.y + 0.7) + '" ' + base +
+      ' fill="#3b2f16" fill-opacity=".22" stroke="#3b2f16" stroke-opacity=".26" stroke-width="' + ((o.stroke === undefined ? 0.7 : o.stroke) + 0.3) + '">' + ch + '</text>' +
+      // 主体填漆字
+      '<text x="' + x + '" y="' + o.y + '" ' + base +
+      ' fill="' + o.color + '" stroke="' + o.color + '" stroke-width="' + (o.stroke === undefined ? 0.7 : o.stroke) + '">' + ch + '</text>'
     );
   }
 
@@ -150,10 +196,15 @@
   }
 
   /* --------------- 筒子 --------------- */
-  /** 同心圆点：外环 + 象牙内圈 + 圆心，形似雕刻筒面 */
+  /** 同心圆点：外环 + 象牙内圈 + 圆心，带阴刻凹槽质感 */
   function dot(cx, cy, r, color, rings) {
     const dark = color === RED ? '#7d1f13' : (color === GREEN ? '#0b4a2e' : '#0f3f6b');
-    let s = '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + color + '" stroke="' + dark + '" stroke-width="0.6"/>';
+    // 阴刻底部反光：略微上移的浅色圆，模拟凹槽受光底缘
+    let s = '<circle cx="' + cx + '" cy="' + (cy - 0.55).toFixed(2) + '" r="' + r + '" fill="#ffffff" fill-opacity=".3"/>';
+    // 阴刻顶部内暗影
+    s += '<circle cx="' + cx + '" cy="' + (cy + 0.7).toFixed(2) + '" r="' + r + '" fill="#2a2210" fill-opacity=".22"/>';
+    // 主体圆点
+    s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + color + '" stroke="' + dark + '" stroke-width="0.6"/>';
     if (rings !== 1) {
       s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (r * 0.62).toFixed(2) + '" fill="' + IVORY + '"/>';
       s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (r * 0.3).toFixed(2) + '" fill="' + color + '"/>';
@@ -212,17 +263,20 @@
   }
 
   /* --------------- 条子 --------------- */
-  /** 竹节棍：圆角身 + 两道节痕 */
+  /** 竹节棍：圆角身 + 两道节痕，带阴刻凹槽质感 */
   function stick(cx, cy, h, color) {
     const w = 4.6, x = cx - w / 2, y = cy - h / 2;
     const dark = color === RED ? '#7d1f13' : '#0b4a2e';
     const lt = color === RED ? '#e9a695' : '#8ed3a8';
-    let s = '<rect x="' + x.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + w + '" height="' + h.toFixed(2) + '" rx="2.2" fill="' + color + '" stroke="' + dark + '" stroke-width="0.5"/>';
+    // 阴刻底部反光 + 顶部内暗影
+    let s = '<rect x="' + x.toFixed(2) + '" y="' + (y - 0.5).toFixed(2) + '" width="' + w + '" height="' + h.toFixed(2) + '" rx="2.2" fill="#ffffff" fill-opacity=".26"/>';
+    s += '<rect x="' + x.toFixed(2) + '" y="' + (y + 0.6).toFixed(2) + '" width="' + w + '" height="' + h.toFixed(2) + '" rx="2.2" fill="#2a2210" fill-opacity=".2"/>';
+    s += '<rect x="' + x.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + w + '" height="' + h.toFixed(2) + '" rx="2.2" fill="' + color + '" stroke="' + dark + '" stroke-width="0.5"/>';
     [0.32, 0.68].forEach(k => {
       const ly = (y + h * k).toFixed(2);
       s += '<line x1="' + (x + 0.9).toFixed(2) + '" y1="' + ly + '" x2="' + (x + w - 0.9).toFixed(2) + '" y2="' + ly + '" stroke="' + lt + '" stroke-width="0.7"/>';
     });
-    s += '<rect x="' + (x + 0.7).toFixed(2) + '" y="' + (y + 1).toFixed(2) + '" width="1" height="' + (h - 2).toFixed(2) + '" fill="#ffffff" opacity=".25"/>';
+    s += '<rect x="' + (x + 0.7).toFixed(2) + '" y="' + (y + 1).toFixed(2) + '" width="1" height="' + (h - 2).toFixed(2) + '" fill="#ffffff" opacity=".28"/>';
     return s;
   }
 
@@ -303,15 +357,23 @@
   }
 
   /* --------------- 牌背 --------------- */
+  /** 牌背：带高光倒角的琥珀朱红双层玉质，顶缘受光棱线 + 四角圆润包边 */
   function backInner() {
     return (
-      '<rect x="1" y="1" width="' + (VW - 2) + '" height="' + (VH - 2) + '" rx="6" fill="url(#mjBack)"/>' +
-      '<rect x="1" y="1" width="' + (VW - 2) + '" height="' + (VH - 2) + '" rx="6" fill="url(#mjBackBevel)"/>' +
-      '<rect x="1" y="1" width="' + (VW - 2) + '" height="' + (VH - 2) + '" rx="6" fill="none" stroke="#d8b273" stroke-width="0.8"/>' +
-      '<rect x="5" y="5" width="' + (VW - 10) + '" height="' + (VH - 10) + '" rx="3.4" fill="none" stroke="#e6c785" stroke-opacity=".5" stroke-width="0.8"/>' +
-      '<path d="M22 18 L30 30 L22 42 L14 30 Z" fill="none" stroke="#e6c785" stroke-width="1.2" stroke-opacity=".75"/>' +
-      '<path d="M22 24 L26.2 30 L22 36 L17.8 30 Z" fill="#e6c785" fill-opacity=".34"/>' +
-      '<path d="M7 3.6 H' + (VW - 7) + '" stroke="#ffd9a0" stroke-opacity=".45" stroke-width="1" stroke-linecap="round"/>'
+      // 外层玉质底壳（朱红）
+      '<rect x="0.6" y="0.6" width="' + (VW - 1.2) + '" height="' + (VH - 1.2) + '" rx="6.4" fill="url(#mjBack)"/>' +
+      // 立体倒角（顶亮底暗）
+      '<rect x="0.6" y="0.6" width="' + (VW - 1.2) + '" height="' + (VH - 1.2) + '" rx="6.4" fill="url(#mjBackBevel)"/>' +
+      // 内层受光牌肚（略小一圈，形成包边厚度）
+      '<rect x="2.6" y="2.6" width="' + (VW - 5.2) + '" height="' + (VH - 5.2) + '" rx="4.8" fill="url(#mjBack)" opacity=".85"/>' +
+      '<rect x="2.6" y="2.6" width="' + (VW - 5.2) + '" height="' + (VH - 5.2) + '" rx="4.8" fill="none" stroke="#e6c785" stroke-opacity=".34" stroke-width="0.7"/>' +
+      // 四角圆润包边高光
+      '<rect x="0.6" y="0.6" width="' + (VW - 1.2) + '" height="' + (VH - 1.2) + '" rx="6.4" fill="none" stroke="#f0d79c" stroke-opacity=".55" stroke-width="0.8"/>' +
+      // 顶缘受光棱线
+      '<path d="M6 2.4 H' + (VW - 6) + '" stroke="#ffd9a0" stroke-opacity=".62" stroke-width="1.2" stroke-linecap="round"/>' +
+      // 中央菱形玉纹
+      '<path d="M22 18 L30 30 L22 42 L14 30 Z" fill="none" stroke="#e6c785" stroke-width="1.2" stroke-opacity=".68"/>' +
+      '<path d="M22 24 L26.2 30 L22 36 L17.8 30 Z" fill="#e6c785" fill-opacity=".3"/>'
     );
   }
 

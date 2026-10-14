@@ -216,9 +216,31 @@ html, body {
   border: 1px solid rgba(216, 180, 108, 0.4);
   box-shadow: 0 2px 7px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-.meld .tile { margin: 0; }
+.meld .tile {
+  margin: 0;
+  border-radius: 5px;
+  /* 副露平躺牌：与牌河弃牌同一双层实体感（上白下红） */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    inset 0 -1px 2px rgba(100, 78, 42, 0.25),
+    0 1px 0 #ebe2cc,
+    0 2px 0 #d8cbb0,
+    0 3px 0 #bfb090,
+    0 4px 0 #7a2216,
+    0 6px 7px rgba(0, 0, 0, 0.6);
+}
 /* 被鸣的那张 (来自他家弃牌) 加金框，一眼看清是从谁那里吃碰来的 */
-.meld .tile.claimed { box-shadow: 0 0 0 2px var(--gold-lt), 0 0 9px rgba(255, 219, 128, 0.7); }
+.meld .tile.claimed {
+  box-shadow:
+    0 0 0 2px var(--gold-lt),
+    0 0 9px rgba(255, 219, 128, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    0 1px 0 #ebe2cc,
+    0 2px 0 #d8cbb0,
+    0 3px 0 #bfb090,
+    0 4px 0 #7a2216,
+    0 6px 7px rgba(0, 0, 0, 0.6);
+}
 .meld.claimed-anim { animation: claim-in .45s cubic-bezier(.2, 1.4, .4, 1); }
 @keyframes claim-in {
   from { transform: translateY(14px) scale(.68); opacity: 0; }
@@ -341,7 +363,25 @@ html, body {
   content: ""; position: absolute; left: 16px; right: 16px; top: 3px; height: 1px;
   background: linear-gradient(90deg, transparent, rgba(216, 180, 108, 0.55), transparent);
 }
-.hand .tile { margin: 0 1px; }
+/* 手牌立牌：立在牌托上的厚实麻将块 —— 顶面高光 + 象牙底座厚度 + 朱红底边 + 落影 */
+.hand .tile {
+  margin: 0 1px;
+  border-radius: 7px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.92),
+    inset 0 -2px 3px rgba(110, 88, 48, 0.28),
+    inset 1px 0 0 rgba(255, 255, 255, 0.55),
+    inset -1px 0 0 rgba(140, 116, 72, 0.35),
+    0 1.5px 0 #ede4ce,
+    0 3px 0 #ddd1b4,
+    0 4.5px 0 #c6b694,
+    0 6px 0 #7c2418,
+    0 7px 0 #4d130b,
+    0 10px 14px rgba(0, 0, 0, 0.65),
+    0 14px 22px rgba(0, 0, 0, 0.38);
+}
+/* 立牌 13px 圆角：SVG 内的骨瓷倒角也同步 */
+.hand .tile svg { border-radius: 7px; }
 
 /* =========== 牌 =========== */
 /* 立体麻将质感：象牙色侧边 (牌厚) + 底部暗边 + 双层落影 */
@@ -360,22 +400,37 @@ html, body {
 .tile.sm { width: var(--tile-w-sm); height: var(--tile-h-sm); border-radius: 5px; }
 .tile.sm svg { border-radius: 5px; }
 .tile.playable { cursor: pointer; }
+/* 拈牌离桌：立牌上提，底部厚度层与桌面投影距离拉开 */
 .tile.playable:hover {
   transform: translateY(-8px);
   filter: brightness(1.07);
   box-shadow:
-    0 1px 0 var(--tile-edge),
-    0 3px 0 var(--tile-edge-2),
-    0 10px 14px rgba(0, 0, 0, 0.55),
-    0 14px 22px rgba(0, 0, 0, 0.32);
+    inset 0 2px 0 rgba(255, 255, 255, 0.92),
+    inset 0 -2px 3px rgba(110, 88, 48, 0.28),
+    inset 1px 0 0 rgba(255, 255, 255, 0.55),
+    inset -1px 0 0 rgba(140, 116, 72, 0.35),
+    0 1.5px 0 #ede4ce,
+    0 3.5px 0 #ddd1b4,
+    0 6px 0 #c6b694,
+    0 8.5px 0 #7c2418,
+    0 10px 0 #4d130b,
+    0 14px 16px rgba(0, 0, 0, 0.62),
+    0 20px 28px rgba(0, 0, 0, 0.36);
 }
 .tile.selected {
   transform: translateY(-13px);
   filter: brightness(1.12);
   box-shadow:
-    0 1px 0 var(--tile-edge),
-    0 3px 0 var(--tile-edge-2),
-    0 12px 16px rgba(0, 0, 0, 0.6),
+    inset 0 2px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -2px 3px rgba(110, 88, 48, 0.28),
+    inset 1px 0 0 rgba(255, 255, 255, 0.55),
+    inset -1px 0 0 rgba(140, 116, 72, 0.35),
+    0 2px 0 #ede4ce,
+    0 5px 0 #ddd1b4,
+    0 8px 0 #c6b694,
+    0 11px 0 #7c2418,
+    0 13px 0 #4d130b,
+    0 18px 20px rgba(0, 0, 0, 0.62),
     0 0 20px rgba(255, 219, 128, 0.55);
 }
 .tile.selected::after {
@@ -481,12 +536,17 @@ html, body {
 .river-s { grid-area: s; }
 .river .tile {
   width: var(--rv-w); height: var(--rv-h);
-  border-radius: 4px;
-  /* 放大后的弃牌也带一点牌厚与落影，与手牌同一实体感 */
+  border-radius: 5px;
+  /* 平躺牌：受俯视角度影响，下沿/右侧呈「上白（象牙牌肚）下红（牌背底壳）」双层结构
+     （总偏移控制在 4px 内，避免放大后的弃牌与悬浮光标越界） */
   box-shadow:
-    0 1px 0 rgba(198, 178, 136, 0.6),
-    0 2px 0 rgba(114, 98, 66, 0.5),
-    0 4px 6px rgba(0, 0, 0, 0.55);
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    inset 0 -1px 2px rgba(100, 78, 42, 0.25),
+    0 1px 0 #ebe2cc,
+    0 2px 0 #d8cbb0,
+    0 3px 0 #bfb090,
+    0 4px 0 #7a2216,
+    0 6px 7px rgba(0, 0, 0, 0.6);
 }
 /* 只有新落的牌播放入场动画 (一次性)，重渲染不会让整片牌河重播 */
 .river .tile.drop-in { animation: discard-in .3s cubic-bezier(.2, 1.3, .4, 1); }
@@ -680,6 +740,18 @@ html, body {
 }
 .win-hand-box .label { font-size: 12px; opacity: .72; letter-spacing: 2px; }
 .win-tiles { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; }
+/* 结算展示的和牌张：平躺双层实体感，与牌河/副露一致 */
+.win-tiles .tile {
+  border-radius: 5px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    inset 0 -1px 2px rgba(100, 78, 42, 0.25),
+    0 1px 0 #ebe2cc,
+    0 2px 0 #d8cbb0,
+    0 3px 0 #bfb090,
+    0 4px 0 #7a2216,
+    0 6px 7px rgba(0, 0, 0, 0.6);
+}
 
 /* ---- 赔率明细 ---- */
 .fan-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 14px; }
