@@ -9,15 +9,15 @@ const { MahjongAI } = require('../js/ai.js');
 let passed = 0, failed = 0;
 function ok(cond, msg) {
   if (cond) { passed++; }
-  else { failed++; console.error('  ✗ FAIL:', msg); }
+  else { failed++; console.error('  ❌ FAIL:', msg); }
 }
 function section(name) { console.log('\n== ' + name + ' =='); }
 
-/* ---------- 工具 ---------- */
+/* --------- 工具 --------- */
 const T = require('../js/tiles.js').tileToIndex;
 const hand = (s) => s.split(/\s+/).map(T);
 
-/* ---------- 和牌判定 ---------- */
+/* --------- 和牌判定 --------- */
 section('和牌判定');
 ok(E.isWin(hand('1m 2m 3m 4m 5m 6m 7m 8m 9m 1p 2p 3p 5s 5s'), 0), '4组+对');
 ok(E.isWin(hand('1m 1m 1m 2m 2m 2m 3m 3m 3m 4m 4m 4m 5s 5s'), 0), '对对胡');
@@ -32,7 +32,7 @@ ok(!E.isWin(hand('4m 5m 6m 7m 8m 9m 1p'), 2), '牌数不足不和');
 ok(E.isWin(hand('2m 3m 4m 4m 5m 6m 7m 8m 9m 8s 8s'), 1), '暗杠副露+手牌3组');
 ok(E.isWin(hand('1m 2m 3m 4m 5m 6m 7m 8m 9m 1p 1p'), 1), '1副露+3组+对');
 
-/* ---------- 向听数 ---------- */
+/* --------- 向听数 --------- */
 section('向听数');
 ok(E.shanten(hand('1m 2m 3m 4m 5m 6m 7m 8m 9m 1p 2p 3p 5s 5s'), 0) === -1, '和牌向听-1');
 ok(E.shanten(hand('1m 2m 3m 4m 5m 6m 7m 8m 9m 1p 2p 3p 5s'), 0) === 0, '4组+单张听牌');
@@ -41,13 +41,16 @@ ok(E.shanten(hand('1m 1m 2m 2m 3m 3m 4m 4m 5m 5m 6m 6m 7m'), 0) === 0, '七对�
 ok(E.shanten(hand('1m 1m 1m 2m 2m 2m 3m 3m 3m 4m 4m 4m 9p'), 0) === 0, '对对听9p');
 ok(E.shanten(hand('1m 1m 2m 2m 3m 3m 4m 4m 5m 5m 6m 6m 7m 7m'), 0) === -1, '七对和牌');
 ok(E.shanten(hand('1m 3m 5m 7m 9m 1p 3p 5p 7p 9p 1s 3s 5s'), 0) === 4, '全散牌向听4');
-ok(E.shanten(hand('1m 2m 3m 4m 5m 6m 1p 1p 2p 3p 5s 5s 9p'), 0) === 1, '2组+2对+搭子向听1');
+ok(E.shanten(hand('1m 2m 3m 4m 5m 6m 1p 2p 3p 5s 5s 9p'), 0) === 1, '2组+2对+搭子向听1');
 ok(E.shanten(hand('1m 2m 3m 4m 5m 6m 1p 2p 3p 5s 6s 7s 9s'), 0) === 0, '4组+单张听牌');
 ok(E.shanten(hand('1m 2m 3m 4m 5m 6m 1p 2p 3p 5s 5s 8s 9s'), 0) === 0, '3组+对+搭子听牌');
 ok(E.shanten(hand('1m 1m 1m 9p 9p 1s 1s 5m 5m 6m 7m 2z 3z'), 0) >= 1, '杂乱手牌向听>=1');
+ok(E.shanten(hand('1m 1m 1m 1m 2p 2p 2p 3s 3s 3s 4z 4z 4z'), 0) === 1, '4张1m已用3张作刻子时不能再单骑第5张1m');
+ok(Object.keys(E.effectiveTiles(hand('3m 4m 1p 2p 3p 4s 5s 6s 5z 5z'), 1).good).length === 2, '有副露时听牌有效进张正常返回');
+ok(Object.keys(E.effectiveTiles(hand('1m 1m 3m 3m 5p 5p 7p 7p 9s 9s 1z 2z 3z'), 0).good).length === 3, '七对一向听有效进张正常返回');
 
-/* ---------- 属性测试：听牌判定 ⟺ 存在和牌张 ---------- */
-section('属性测试（随机 200 手）');
+/* --------- 属性测试：听牌判定 ↔ 存在和牌张 --------- */
+section('属性测试 (随机 200 手)');
 function mulberry32(a) {
   return function () {
     a |= 0; a = (a + 0x6D2B79F5) | 0;
@@ -70,13 +73,13 @@ function mulberry32(a) {
     const h = tiles.slice(0, 13);
     const s = E.shanten(h, 0);
     const hasWinTile = Array.from({ length: 34 }, (_, t) => t).some(t => h.filter(x => x === t).length < 4 && E.isWin(h.concat([t]), 0));
-    if ((s === 0) !== hasWinTile) { bad++; if (bad <= 3) console.error('  ✗ 手牌', h.join(','), '向听', s, '但存在和牌张:', hasWinTile); }
-    if (s === -1 !== E.isWin(h, 0)) { bad++; }
+    if ((s === 0) !== hasWinTile) { bad++; if (bad <= 3) console.error('  ❌ 手牌', h.join(','), '向听', s, '但存在和牌张:', hasWinTile); }
+    if ((s === -1) !== E.isWin(h, 0)) { bad++; }
   }
-  ok(bad === 0, '随机手牌：向听0 ⟺ 存在和牌张');
+  ok(bad === 0, '随机手牌: 向听0 ↔ 存在和牌张');
 }
 
-/* ---------- 番型结算 ---------- */
+/* --------- 番型结算 --------- */
 section('番型结算');
 function mkPlayer(h, melds) { return { hand: hand(h), melds: melds || [], wind: 0 }; }
 {
@@ -106,11 +109,21 @@ function mkPlayer(h, melds) { return { hand: hand(h), melds: melds || [], wind: 
 {
   const melds = [{ type: 'chi', tile: T('1m'), tiles: [T('1m'), T('2m'), T('3m')], from: 1 }];
   const r = E.evaluateFan({ player: mkPlayer('4m 5m 6m 7m 8m 9m 1p 2p 3p 5s 5s', melds), winTile: T('5s'), selfDraw: false });
-  ok(!r.fans.some(f => f.name === '门清'), '有吃牌则非门清');
+  ok(!r.fans.some(f => f.name === '门清'), '有吃碰则非门清');
 }
 {
   const r = E.evaluateFan({ player: mkPlayer('2m 3m 4m 2p 3p 4p 2s 3s 4s 5m 6m 7m 5m'), winTile: T('5m'), selfDraw: false });
   ok(r.fans.some(f => f.name === '三色同顺'), '三色同顺');
+}
+{
+  const r = E.evaluateFan({ player: mkPlayer('2m 2m 3m 3m 4m 4m 5m 5m 2p 3p 4p 2s 3s'), winTile: T('4s'), selfDraw: true });
+  ok(r.fans.some(f => f.name === '三色同顺') && r.totalMult === 12, '高点法择优命中三色同顺 ×12');
+}
+{
+  const rRon = E.evaluateFan({ player: mkPlayer('1m 1m 1m 2m 2m 2m 3m 3m 4p 5p 6p 9s 9s'), winTile: T('3m'), selfDraw: false });
+  ok(!rRon.fans.some(f => f.name === '三暗刻'), '双碰听牌点炮成刻不计三暗刻');
+  const rTsumo = E.evaluateFan({ player: mkPlayer('1m 1m 1m 2m 2m 2m 3m 3m 4p 5p 6p 9s 9s'), winTile: T('3m'), selfDraw: true });
+  ok(rTsumo.fans.some(f => f.name === '三暗刻'), '双碰听牌自摸成刻计三暗刻');
 }
 {
   const r = E.evaluateFan({ player: mkPlayer('2m 3m 4m 4m 5m 6m 6m 7m 8m 5p 5p 5p 5s'), winTile: T('5s'), selfDraw: false });
@@ -121,13 +134,14 @@ function mkPlayer(h, melds) { return { hand: hand(h), melds: melds || [], wind: 
   ok(r.fans.some(f => f.name === '杠上开花'), '杠上开花');
 }
 
-/* ---------- 杠：确定性路径覆盖（不依赖随机触发） ---------- */
-section('杠（暗杠 / 加杠 / 明杠）');
+/* --------- 杠与鸣牌规则：确定性路径覆盖 --------- */
+section('杠与吃碰鸣牌 (暗杠 / 加杠 / 明杠 / 吃上家 / 吃碰听牌)');
 {
   const game = new E.MahjongGame({ rng: mulberry32(7) });
   game.startMatch();
+
   const p = game.players[0];
-  // 暗杠：手上凑齐 4 张 5 万
+  // 暗杠: 手上凑齐 4 张 5 万
   p.hand = hand('5m 5m 5m 5m 1m 2m 3m 4m 6m 7m 8m 9m 1p 2p');
   const deadBefore = game.dead.length;
   const list = game.findConcealedKongs(p);
@@ -135,11 +149,11 @@ section('杠（暗杠 / 加杠 / 明杠）');
   game.declareConcealedKong(p, T('5m'));
   ok(p.melds.length === 1 && p.melds[0].concealed === true, '暗杠写入副露且标记 concealed');
   ok(p.hand.filter(t => t === T('5m')).length === 0, '手牌中 4 张 5m 被移除');
-  ok(p.hand.length === 10, '暗杠后手牌 10 张（14-4）');
+  ok(p.hand.length === 10, '暗杠后手牌 10 张 (14-4) ');
   const t2 = game.drawTile(p, true);
-  ok(t2 !== null && game.dead.length === deadBefore - 1, '暗杠后从王牌（岭上）补牌，王牌 -1');
+  ok(t2 !== null && game.dead.length === deadBefore - 1, '暗杠后从王牌 (岭上) 补牌，王牌 -1');
 
-  // 加杠：已有碰副露 + 摸到第 4 张
+  // 加杠: 已有碰副露 + 摸到第 4 张
   const q = game.players[1];
   q.hand = hand('3s 3s 3s 1m 2m 4m 5m 6m 7m 8m 9m 1p 2p 3p');
   q.melds = [{ type: 'pong', tile: T('3s'), tiles: [T('3s'), T('3s'), T('3s')], from: 0 }];
@@ -149,7 +163,7 @@ section('杠（暗杠 / 加杠 / 明杠）');
   game.declareAddedKong(q, T('3s'));
   ok(q.melds.length === 1 && q.melds[0].type === 'kong' && q.melds[0].tiles.length === 4, '加杠升级为 4 张杠');
 
-  // 明杠：他家弃牌 + 手中 3 张
+  // 明杠: 他家弃牌 + 手中 3 张
   const r = game.players[2];
   r.hand = hand('7p 7p 7p 1m 2m 3m 4m 5m 6m 7m 8m 9m 1s');
   const d3 = game.players[3];
@@ -160,10 +174,21 @@ section('杠（暗杠 / 加杠 / 明杠）');
   ok(opts.some(o => o.player === 2 && o.type === 'kong'), '明杠选项出现在 claimOptions');
   game.applyKongFromDiscard(2);
   ok(r.melds.length === 1 && r.melds[0].tiles.length === 4 && !r.melds[0].concealed, '明杠写入 4 张副露');
+
+  // 吃牌方向与 AI 吃碰听牌
+  const ai = new MahjongAI(game);
+  ok(ai.visibleCounts(null)[T('7p')] === 4, '明杠后可见牌计数不超 4');
+  game.players[0].melds = [];
+  game.players[0].hand = hand('1m 2m 3m 4p 5p 6p 2s 3s 5z 5z 7p 7p 9s');
+  const chiFromLeft = game.claimOptions(3, T('1s')).filter(o => o.player === 0 && o.type === 'chi');
+  const chiFromRight = game.claimOptions(1, T('1s')).filter(o => o.player === 0 && o.type === 'chi');
+  ok(chiFromLeft.length === 1 && chiFromRight.length === 0, '仅允许吃左手边上家(座位3->座位0)打出的牌');
+  const claimDecision = ai.decideClaim(chiFromLeft, game.players[0]);
+  ok(claimDecision && claimDecision.type === 'chi', 'AI 一向听时可正常吃牌进入听牌');
 }
 
-/* ---------- 无头模拟对局 ---------- */
-section('模拟对局（4 家全 AI）');
+/* --------- 无头模拟对局 --------- */
+section('模拟对局 (4 家全 AI) ');
 
 function playHand(game, ai) {
   let guard = 0;
@@ -185,13 +210,13 @@ function playHand(game, ai) {
       if (kong) {
         if (kong.kind === 'concealed') game.declareConcealedKong(p, kong.tile);
         else game.declareAddedKong(p, kong.tile);
-        game.settleKongPoints(p, kong.kind === 'concealed');
         const rob = game.robKongOptions();
         if (rob.length) {
           const w = game.players[rob[0].player];
           game.settleWin(w, { robKong: true, fromDiscard: p.id });
           return { dealerWon: w.dealer, isDraw: false };
         }
+        game.settleKongPoints(p, kong.kind === 'concealed');
         const t2 = game.drawTile(p, true);
         if (t2 === null) { game.updateTenpaiFlags(); game.settleDraw(); return { dealerWon: false, isDraw: true }; }
         if (game.canWin(p)) {
@@ -215,7 +240,7 @@ function playHand(game, ai) {
       const d0 = decided[0];
       const pl = game.players[d0.player];
       if (d0.type === 'win') {
-        game.settleWin(pl, { selfDraw: false, fromDiscard: p.id, haitei: game.wall.length === 0 });
+        game.settleWin(pl, { selfDraw: false, fromDiscard: p.id, haitei: false });
         return { dealerWon: pl.dealer, isDraw: false };
       }
       if (d0.type === 'pong') game.applyPong(d0.player);
@@ -228,7 +253,7 @@ function playHand(game, ai) {
           return { dealerWon: pl.dealer, isDraw: false };
         }
         if (t2 === null) { game.updateTenpaiFlags(); game.settleDraw(); return { dealerWon: false, isDraw: true }; }
-      } else if (d0.type === 'chi') game.applyChi(d0.player, d0.combos[0]);
+      } else if (d0.type === 'chi') game.applyChi(d0.player, d0.combo || d0.combos[0]);
       game.turn = d0.player;
       skipDraw = true;
       continue;
@@ -263,16 +288,16 @@ for (let seed = 1; seed <= N; seed++) {
     totalWins += r.wins;
     totalDraws += r.draws;
     const sum = r.game.players.reduce((s, p) => s + p.score, 0);
-    if (sum !== E.START_SCORE * 4) { failed++; console.error(`  ✗ seed=${seed} 金币不守恒: ${sum}`); }
+    if (sum !== E.START_SCORE * 4) { failed++; console.error(`  ❌ seed=${seed} 金币不守恒: ${sum}`); }
   } catch (e) {
     errors++;
-    if (errors <= 3) console.error(`  ✗ seed=${seed} 异常:`, e.message);
+    if (errors <= 3) console.error(`  ❌ seed=${seed} 异常:`, e.message);
   }
 }
-ok(errors === 0, `${N} 场模拟无异常（异常 ${errors} 次）`);
-console.log(`  模拟 ${N} 场对局：共 ${totalHands} 局，和牌 ${totalWins}，流局 ${totalDraws}，耗时 ${Date.now() - t0}ms`);
-console.log(`  和牌率 ${(totalWins / totalHands * 100).toFixed(1)}%，流局率 ${(totalDraws / totalHands * 100).toFixed(1)}%`);
+ok(errors === 0, `${N} 场模拟无异常 (异常 ${errors} 次)`);
+console.log(`  模拟 ${N} 场对局: 共 ${totalHands} 局, 和牌 ${totalWins}, 流局 ${totalDraws}, 耗时 ${Date.now() - t0}ms`);
+console.log(`  和牌率 ${((totalWins / totalHands * 100).toFixed(1))}%, 流局率 ${((totalDraws / totalHands * 100).toFixed(1))}%`);
 
-/* ---------- 结果 ---------- */
+/* --------- 结果 --------- */
 console.log(`\n========== 通过 ${passed} / 失败 ${failed} ==========`);
 process.exit(failed > 0 ? 1 : 0);

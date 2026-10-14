@@ -1,7 +1,7 @@
-/* ============================================================
-   雅 · 麻将 — 视觉样式
+/* =========================================================
+   雅 · 麻将 – 视觉样式
    设计：深蓝夜空牌桌 + 鎏金镶边 + 象牙牌面，参考「深蓝/鎏金/书法」配色体系
-   ============================================================ */
+   ========================================================= */
 
 :root {
   /* 配色 */
@@ -18,25 +18,25 @@
   --shadow-soft: 0 6px 22px rgba(0, 0, 0, 0.45);
   --radius: 14px;
 
-  /* 牌宽自适应：以「14 张手牌 + 13 道 2px 间隙 + 牌托/牌桌内边距 必须铺得进视口宽度」为约束；
-     同时以视口高度给出手牌上限，避免矮屏时纵向被挤爆。大屏封顶 64px。 */
+  /* 牌宽高自适应：以「14 张手牌 + 13 道 2px 间隙 + 牌托/牌桌内边距 必须铺得进窗口宽度」为约束；
+     同时以窗口高度给出手牌上限，避免矮屏时纵向被挤爆。大屏封顶 64px。 */
   --tile-w: clamp(22px, min(calc((100vw - 64px) / 14), calc((100vh - 352px) / 1.45)), 70px);
   --tile-h: calc(var(--tile-w) * 1.36);
   --tile-w-sm: clamp(15px, calc(var(--tile-w) * 0.55), 38px);
   --tile-h-sm: calc(var(--tile-w-sm) * 1.36);
 
-  /* 牌河（已出过的牌）：取手牌尺寸的 0.66，并按「视口宽 − 两侧座位 − 铭牌」收口。
-     桌面从 26px 放大到 46px，让打过的牌一眼看清花色。 */
+  /* 牌河 (已出过的牌)：取手牌尺寸的 0.66，并按「视口宽 – 两侧座位 – 铭牌」收口。
+     桌面从 26px 放宽到 46px，让打过的牌一眼看清牌面。 */
   --rv-gap: 3px;
   --rv-w: clamp(15px, min(calc((100vw - 150px) / 11), calc(var(--tile-w) * 0.6)), 42px);
   --rv-h: calc(var(--rv-w) * 1.36);
 
-  /* 牌面厚度（立体感）：用象牙色侧边 + 投影堆出麻将牌的实体感 */
+  /* 牌面厚度 (立体感)：用象牙色侧边 + 投影堆出麻将牌的实体感 */
   --tile-edge: rgba(226, 210, 168, 0.96);
   --tile-edge-2: rgba(158, 136, 92, 0.92);
 
-  /* 立牌立体感（其他玩家的牌背）：顶缘受光 + 双侧暗面 + 底缘背光
-     + 两层实心偏移充当牌体厚度 + 落影 —— 一个 CSS 变量供横/竖两处牌墙复用。 */
+  /* 立牌立体感 (其他玩家的牌背)：顶缘受光 + 双侧暗面 + 底缘背光
+     + 两层实心偏移充当牌体厚度 + 投影 — 一个 CSS 变量供横/竖两处牌墙复用。 */
   --slab-sh:
     inset 0 2px 0 rgba(255, 233, 184, 0.42),
     inset 5px 0 9px rgba(0, 0, 0, 0.28),
@@ -46,10 +46,10 @@
     0 4px 0 rgba(74, 17, 11, 0.92),
     0 7px 12px rgba(0, 0, 0, 0.62);
 
-  --seat-0: #e9c063;  /* 我 */
-  --seat-1: #7fb8e8;  /* 右家 */
-  --seat-2: #e8897a;  /* 对家 */
-  --seat-3: #86d99a;  /* 左家 */
+  --seat-0: #e9c063; /* 我 */
+  --seat-1: #7fb8e8; /* 右家 */
+  --seat-2: #e8897a; /* 对家 */
+  --seat-3: #86d99a; /* 左家 */
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -132,9 +132,9 @@ html, body {
   background:
     /* 中央暖光 */
     radial-gradient(ellipse 46% 34% at 50% 46%, rgba(216, 180, 108, 0.09), transparent 70%),
-    /* 桌面鎏金镶嵌圆环（内细外粗两道） */
-    radial-gradient(circle closest-side at 50% 46%, transparent 0 44%, rgba(216,180,108,.13) 44% 44.4%, transparent 44.6%),
-    radial-gradient(circle closest-side at 50% 46%, transparent 0 50%, rgba(216,180,108,.07) 50% 50.3%, transparent 50.6%),
+    /* 桌面鎏金镶嵌圆环 (内细外粗两道) */
+    radial-gradient(circle closest-side at 50% 46%, transparent 0 44%, rgba(216,180,108,.13) 44% 44.4%, transparent 44.4% 100%),
+    radial-gradient(circle closest-side at 50% 46%, transparent 0 50%, rgba(216,180,108,.07) 50% 50.3%, transparent 50.3% 100%),
     radial-gradient(ellipse 62% 50% at 50% 46%, rgba(86, 116, 208, 0.32), transparent 72%),
     radial-gradient(ellipse 120% 110% at 50% 50%, var(--navy-1) 0%, var(--navy-2) 46%, var(--navy-3) 88%);
   z-index: 0;
@@ -153,8 +153,8 @@ html, body {
   border: 1px solid rgba(216, 180, 108, 0.34);
   border-radius: 14px;
   box-shadow:
-    inset 0 0 0 4px rgba(6, 9, 24, 0.55),
-    inset 0 0 0 5px rgba(216, 180, 108, 0.16),
+    inset 0 0 4px rgba(6, 9, 24, 0.55),
+    inset 0 0 5px rgba(216, 180, 108, 0.16),
     inset 0 0 90px rgba(0, 0, 0, 0.55);
   pointer-events: none;
 }
@@ -165,7 +165,7 @@ html, body {
 .seat-top { grid-area: top; justify-content: center; }
 .seat-left { grid-area: left; justify-content: flex-start; align-items: center; }
 .seat-right { grid-area: right; justify-content: flex-end; align-items: center; }
-#me { grid-area: me; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+#me { grid-area: me; display: flex; flex-direction: column; align-items: center; gap: 6px; position: relative; }
 
 .panel {
   background: var(--panel-bg);
@@ -192,7 +192,7 @@ html, body {
   flex: 0 0 auto;
 }
 .seat-text { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
-.seat-name { font-size: 13px; font-weight: 600; white-space: nowrap; font-family: "STKaiti", "KaiTi", "PingFang SC", sans-serif; }
+.seat-name { font-size: 13px; font-weight: 600; white-space: nowrap; font-family: "STKaiti", "KaiTi", "PingFang SC", serif; }
 .seat-meta { font-size: 11px; opacity: .85; display: flex; gap: 6px; align-items: center; }
 .seat-score { color: var(--gold-lt); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .badge {
@@ -206,7 +206,7 @@ html, body {
 
 @keyframes pulse { 50% { opacity: .55; } }
 
-/* ---- 副露（吃 / 碰 / 杠）：明确摆在对应玩家身旁 ---- */
+/* ---- 副露 (吃 / 碰 / 杠)：明确摆在对应玩家身旁 ---- */
 .melds { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .side-melds { display: flex; flex-direction: column; gap: 4px; align-items: center; }
 .meld {
@@ -217,21 +217,19 @@ html, body {
   box-shadow: 0 2px 7px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 .meld .tile { margin: 0; }
-/* 被鸣的那张（来自他家弃牌）加金框，一眼看清是从谁那里吃碰来的 */
+/* 被鸣的那张 (来自他家弃牌) 加金框，一眼看清是从谁那里吃碰来的 */
 .meld .tile.claimed { box-shadow: 0 0 0 2px var(--gold-lt), 0 0 9px rgba(255, 219, 128, 0.7); }
 .meld.claimed-anim { animation: claim-in .45s cubic-bezier(.2, 1.4, .4, 1); }
 @keyframes claim-in {
   from { transform: translateY(14px) scale(.68); opacity: 0; }
 }
 
-/* ---- 对家 / 左右家的牌墙（牌背条） ---- */
+/* ---- 对家 / 左右家的牌墙 (牌背条) ---- */
 .seat-top .panel { display: flex; flex-direction: column; gap: 5px; align-items: center; }
 .seat-left .panel, .seat-right .panel {
   display: flex; flex-direction: column; gap: 6px; align-items: center;
   padding: 7px 8px; width: fit-content; max-width: 100%;
 }
-/* 对家：一排朝自己立着的牌背 —— 用完整牌面比例 + 横向重叠，配合透视与厚度阴影
-   做出立体麻将牌，而不是一条压扁的色带。 */
 .seat-backs.h { display: flex; align-items: flex-end; perspective: 480px; }
 .seat-backs.h .tile {
   width: calc(var(--tile-w-sm) * 0.78);
@@ -243,7 +241,6 @@ html, body {
   box-shadow: var(--slab-sh);
 }
 .seat-backs.h .tile:first-child { margin-left: 0; }
-/* 左右家：竖排的立牌（牌背横置），左右各朝桌心一侧透视，形成纵深 */
 .seat-backs.v { display: flex; flex-direction: column; align-items: center; perspective: 640px; }
 .seat-backs.v .tile {
   width: calc(var(--tile-w-sm) * 1.04);
@@ -266,6 +263,65 @@ html, body {
 #my-melds { justify-content: center; min-height: 4px; }
 #my-melds:empty { display: none; }
 
+/* ---- 听牌实时预览浮条 (绝对定位，不挤占牌桌网格高度) ---- */
+.ting-tip {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(8, 14, 36, 0.94);
+  border: 1px solid rgba(143, 227, 160, 0.55);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55), 0 0 14px rgba(143, 227, 160, 0.2);
+  z-index: 35;
+  pointer-events: none;
+  white-space: nowrap;
+  max-width: 94vw;
+}
+.ting-tip.hidden { display: none; }
+.ting-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #8fe3a0;
+  letter-spacing: 1px;
+}
+.ting-empty {
+  font-size: 11px;
+  color: rgba(245, 239, 221, 0.65);
+}
+.ting-list {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ting-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 5px 2px 3px;
+  border-radius: 6px;
+}
+.ting-svg {
+  width: 17px;
+  height: 23px;
+  display: inline-block;
+}
+.ting-svg svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.ting-cnt {
+  font-size: 10.5px;
+  color: var(--gold-lt);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---- 手牌牌托 ---- */
 .hand {
   display: flex; justify-content: center; align-items: flex-end;
@@ -287,16 +343,16 @@ html, body {
 }
 .hand .tile { margin: 0 1px; }
 
-/* ============ 牌 ============ */
-/* 立体麻将质感：象牙色侧边（牌厚）+ 底部暗边 + 双层落影 */
+/* =========== 牌 =========== */
+/* 立体麻将质感：象牙色侧边 (牌厚) + 底部暗边 + 双层落影 */
 .tile {
   width: var(--tile-w); height: var(--tile-h);
   border-radius: 6px; cursor: default;
   transition: transform .16s ease, box-shadow .16s, filter .16s;
   position: relative; flex: 0 0 auto;
   box-shadow:
-    0 1px 0 0 var(--tile-edge),
-    0 2px 0 0 var(--tile-edge-2),
+    0 1px 0 var(--tile-edge),
+    0 2px 0 var(--tile-edge-2),
     0 5px 8px rgba(0, 0, 0, 0.55),
     0 8px 16px rgba(0, 0, 0, 0.30);
 }
@@ -308,8 +364,8 @@ html, body {
   transform: translateY(-8px);
   filter: brightness(1.07);
   box-shadow:
-    0 1px 0 0 var(--tile-edge),
-    0 3px 0 0 var(--tile-edge-2),
+    0 1px 0 var(--tile-edge),
+    0 3px 0 var(--tile-edge-2),
     0 10px 14px rgba(0, 0, 0, 0.55),
     0 14px 22px rgba(0, 0, 0, 0.32);
 }
@@ -317,8 +373,8 @@ html, body {
   transform: translateY(-13px);
   filter: brightness(1.12);
   box-shadow:
-    0 1px 0 0 var(--tile-edge),
-    0 3px 0 0 var(--tile-edge-2),
+    0 1px 0 var(--tile-edge),
+    0 3px 0 var(--tile-edge-2),
     0 12px 16px rgba(0, 0, 0, 0.6),
     0 0 20px rgba(255, 219, 128, 0.55);
 }
@@ -326,6 +382,34 @@ html, body {
   content: ""; position: absolute; left: 6%; right: 6%; bottom: -8px; height: 3px;
   border-radius: 2px; background: var(--gold-lt); box-shadow: 0 0 10px var(--gold-lt);
 }
+
+/* 可听角标：打出该牌即可进入听牌状态 (静态徽标，不触发无限动画) */
+.tile.can-ting:not(.selected)::after {
+  content: "听";
+  position: absolute;
+  top: -5px;
+  right: -2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #277a52, #124d31);
+  border: 1px solid #9ef0b6;
+  color: #eafff0;
+  font-size: 9px;
+  line-height: 13px;
+  text-align: center;
+  font-weight: 700;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+/* 桌面同名牌联动高亮 (悬停或选中手牌时牌河与副露同步醒目提示) */
+.river .tile.same-match,
+.meld .tile.same-match {
+  filter: brightness(1.18);
+  box-shadow: 0 0 0 2px #7fe7ff, 0 0 12px rgba(127, 231, 255, 0.85);
+}
+
 .tile.win-tile { animation: win-glow 1s infinite; }
 @keyframes win-glow {
   0%, 100% { filter: drop-shadow(0 0 4px rgba(255, 215, 130, .85)); }
@@ -333,13 +417,13 @@ html, body {
 }
 .tile.dim { opacity: .55; }
 
-/* 发牌：仅做轻微下落淡入，无缩放、无回弹，避免整手牌视觉抖动 */
+/* 发牌：仅做轻微落淡入，无缩放、无回弹，避免整手牌视觉抖动 */
 @keyframes deal-in {
   from { opacity: 0; transform: translateY(-14px); }
   to { opacity: 1; transform: none; }
 }
 
-/* 刚摸到的牌：静态金环 + 一次性入场位移（不含额外抖动） */
+/* 刚摸到的牌：静态金环 + 一次性入场位移 (不含额外抖动) */
 .tile.last-drawn::before {
   content: ""; position: absolute; inset: -2px; border-radius: 8px;
   border: 2px solid rgba(255, 219, 128, 0.92);
@@ -352,7 +436,7 @@ html, body {
   to { transform: none; opacity: 1; }
 }
 
-/* ============ 中央：四家独立牌河 + 局势铭牌 ============ */
+/* =========== 中央：四家独立牌河 + 局势铭牌 =========== */
 #center {
   grid-area: center;
   display: grid;
@@ -361,11 +445,11 @@ html, body {
   min-width: 0; min-height: 0;
   position: relative;
 }
-/* 3×3：北=对家 / 西=左家 / 中=铭牌 / 东=右家 / 南=我 —— 每位玩家正前方一块独立出牌区 */
+/* 3x3：北=对家 / 西=左家 / 中=铭牌 / 东=右家 / 南=我 —— 每位玩家正前方一块独立出牌区 */
 #rivers {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  /* 中间行（东西家的出牌区）拿到 1.5 倍行高：侧家弃牌从 4 列升到 5 列后要排 3 行 */
+  /* 中间行 (东西家的出牌区) 拿到 1.5 倍行高：侧家弃牌从 4 列升到 5 列后要排 3 行 */
   grid-template-rows: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
   grid-template-areas:
     "n n n"
@@ -381,14 +465,14 @@ html, body {
 .river {
   display: flex;
   flex-wrap: wrap;
-  align-content: flex-end;          /* 新牌在下：空间不足时优先保留最新的牌 */
+  align-content: flex-end;        /* 新牌在下：空间不足时优先保留最新的牌 */
   align-items: flex-end;
   justify-content: center;
   gap: var(--rv-gap);
   min-height: 0;
   overflow: hidden;
 }
-/* 北/南：10 列（2 行 = 20 张）；西/东：6 列（3 行 = 18 张）—— 一局弃牌全都能看见 */
+/* 北/南:10 列 (2 行 = 20 张);西/东:6 列 (3 行 = 18 张) —— 一局弃牌全都能看见 */
 .river-n, .river-s { width: calc(10 * (var(--rv-w) + var(--rv-gap)) - var(--rv-gap)); }
 .river-w, .river-e { width: calc(6 * (var(--rv-w) + var(--rv-gap)) - var(--rv-gap)); }
 .river-n { grid-area: n; }
@@ -398,19 +482,19 @@ html, body {
 .river .tile {
   width: var(--rv-w); height: var(--rv-h);
   border-radius: 4px;
-  /* 放大后的弃牌也带一点牌厚与落影，与手牌同一套实体感 */
+  /* 放大后的弃牌也带一点牌厚与落影，与手牌同一实体感 */
   box-shadow:
     0 1px 0 rgba(198, 178, 136, 0.6),
     0 2px 0 rgba(114, 98, 66, 0.5),
     0 4px 6px rgba(0, 0, 0, 0.55);
 }
-/* 只有新落的牌播放入场动画（一次性），重渲染不会让整片牌河重播 */
+/* 只有新落的牌播放入场动画 (一次性)，重渲染不会让整片牌河重播 */
 .river .tile.drop-in { animation: discard-in .3s cubic-bezier(.2, 1.3, .4, 1); }
 @keyframes discard-in {
   from { transform: scale(.45) translateY(-14px); opacity: 0; }
 }
 
-/* 当前牌（全桌最新一张弃牌）：悬浮光标 */
+/* 当前牌 (全桌最新一张弃牌)：悬浮光标 */
 .river .tile.cursor {
   box-shadow: 0 0 0 2px var(--gold-lt), 0 0 14px rgba(216, 180, 108, 0.85);
 }
@@ -482,7 +566,7 @@ html, body {
   min-height: 24px;
 }
 
-/* ============ 吃 / 碰 / 杠 / 胡 浮字 ============ */
+/* =========== 吃 / 碰 / 杠 / 胡 浮字 =========== */
 #action-flash {
   position: absolute; left: 50%; top: 44%;
   transform: translate(-50%, -50%) scale(.6);
@@ -513,9 +597,9 @@ html, body {
 #action-flash.k-chi  { color: #d8f0ff; text-shadow: 0 0 18px rgba(120, 200, 255, .9), 0 4px 14px rgba(0,0,0,.8); }
 #action-flash.k-pong { color: #ffe9b0; text-shadow: 0 0 18px rgba(255, 200, 90, .95), 0 4px 14px rgba(0,0,0,.8); }
 #action-flash.k-kong { color: #ffd0a8; text-shadow: 0 0 20px rgba(255, 150, 70, .95), 0 4px 14px rgba(0,0,0,.8); }
-#action-flash.k-win  { color: #fff6d8; font-size: 76px; text-shadow: 0 0 26px rgba(255, 215, 120, 1), 0 0 60px rgba(255, 170, 60, .7), 0 4px 16px rgba(0,0,0,.85); }
+#action-flash.k-win  { color: #fff6d8; font-size: 76px; text-shadow: 0 0 26px rgba(255, 215, 120, 1), 0 0 60px rgba(255, 180, 60, .8), 0 4px 16px rgba(0, 0, 0, .9); }
 
-/* ============ 操作栏 ============ */
+/* =========== 操作栏 =========== */
 #action-bar {
   position: absolute; left: 50%; bottom: calc(var(--tile-h) + 34px);
   transform: translateX(-50%);
@@ -524,7 +608,7 @@ html, body {
   border: 1px solid var(--gold);
   border-radius: 999px;
   padding: 7px 12px;
-  box-shadow: 0 8px 28px rgba(0,0,0,.6), 0 0 22px rgba(216, 180, 108,.28);
+  box-shadow: 0 8px 28px rgba(0,0,0,.6), 0 0 22px rgba(216, 180, 108, .28);
   animation: bar-in .25s ease;
   max-width: 96vw; flex-wrap: wrap; justify-content: center;
 }
@@ -541,7 +625,7 @@ html, body {
 .act-btn:hover { filter: brightness(1.1); }
 .act-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--gold-deep); }
 .act-btn.win { background: linear-gradient(180deg, #ff9d5c, #e8703a); box-shadow: 0 3px 0 #a34d22, 0 4px 10px rgba(0,0,0,.4); color: #fff; }
-.act-btn.pass { background: rgba(255,255,255,.12); color: var(--ivory); box-shadow: none; border: 1px solid rgba(255,255,255,.25); font-weight: 500; }
+.act-btn.pass { background: rgba(255,255,255,.12); color: var(--ivory); box-shadow: none; border: 1px solid rgba(255,255,255,.2); }
 .act-btn[disabled] { opacity: .4; pointer-events: none; }
 .act-btn .sub { display: block; font-size: 10px; font-weight: 400; opacity: .8; letter-spacing: 0; }
 .act-count {
@@ -549,7 +633,7 @@ html, body {
   font-size: 11px; background: rgba(0,0,0,.3); border-radius: 999px; padding: 1px 5px; margin-left: 4px;
 }
 
-/* ============ Toast ============ */
+/* =========== Toast =========== */
 #toast {
   position: absolute; left: 50%; top: 15%; transform: translateX(-50%);
   background: rgba(9, 13, 34, 0.94); border: 1px solid var(--panel-border);
@@ -561,7 +645,7 @@ html, body {
 #toast.hidden { display: none; }
 @keyframes toast-in { from { opacity: 0; transform: translateX(-50%) translateY(-8px); } }
 
-/* ============ 模态框 ============ */
+/* =========== 模态框 =========== */
 #modal-root:empty { display: none; }
 .modal-mask {
   position: fixed; inset: 0; z-index: 100;
@@ -577,7 +661,7 @@ html, body {
   background: linear-gradient(180deg, #1a2452, #0d1332);
   border: 1px solid var(--gold);
   border-radius: 18px;
-  box-shadow: 0 24px 70px rgba(0,0,0,.7), 0 0 46px rgba(216, 180, 108,.16);
+  box-shadow: 0 24px 70px rgba(0,0,0,.7), 0 0 46px rgba(216, 180, 108, .16);
   padding: 22px 24px;
   animation: modal-in .35s cubic-bezier(.2, 1.2, .4, 1);
 }
@@ -630,7 +714,7 @@ html, body {
 .coin-line.win .unit { font-size: 12px; opacity: .7; margin-left: 4px; color: var(--gold); }
 
 /* ---- 各家金币变化 ---- */
-.score-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 4px; border-bottom: 1px dashed rgba(216,180,108,.18); font-size: 14px; }
+.score-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 4px; border-bottom: 1px solid rgba(255,255,255,.07); font-size: 13.5px; }
 .score-row .who { display: flex; align-items: center; gap: 7px; }
 .score-row .delta { font-weight: 700; font-variant-numeric: tabular-nums; }
 .delta.plus { color: #ffb060; }
@@ -641,10 +725,10 @@ html, body {
 .rules-text h3 { color: var(--gold); font-size: 15px; margin: 12px 0 4px; letter-spacing: 2px; font-family: "STKaiti", "KaiTi", serif; }
 .rules-text ul { padding-left: 20px; }
 .rules-text .odds-hint { font-size: 12px; opacity: .7; }
-.odds-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px 14px; font-size: 13px; margin-top: 4px; }
-.odds-grid .odds-row { display: flex; justify-content: space-between; border-bottom: 1px dashed rgba(216,180,108,.16); padding: 3px 2px; }
+.odds-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px 14px; font-size: 13px; margin-top: 6px; }
+.odds-grid .odds-row { display: flex; justify-content: space-between; border-bottom: 1px dashed rgba(216,180,108,.2); padding: 3px 0; }
 .odds-grid .odds-row b { color: var(--gold-lt); font-variant-numeric: tabular-nums; }
-.rank-row { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-bottom: 1px dashed rgba(216,180,108,.2); }
+.rank-row { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-bottom: 1px dashed rgba(216,180,108,.2); font-size: 14px; }
 .rank-row .no { font-size: 18px; font-weight: 800; width: 30px; text-align: center; color: var(--gold); }
 .rank-row .nm { flex: 1; }
 .rank-row .sc { font-weight: 700; color: var(--gold-lt); font-variant-numeric: tabular-nums; }
@@ -677,11 +761,11 @@ html, body {
   #me-panel { gap: 10px; padding: 5px 10px; }
 }
 
-/* 窄屏手机（竖屏）：14 张牌挤成一行只剩 ~23px，数字笔画糊成一团。
+/* 窄屏手机 (竖屏)：14 张牌挤成一行只剩 ~23px，数字笔画糊成一团。
    改为两行手牌 → 牌面可放大约 2 倍，保证牌面数字与花色清晰可辨。 */
 @media (max-width: 520px) {
   :root {
-    /* 每行 7 张：视口宽减去牌桌内边距(12) + 牌托内边距与边框(22) + 13 张×1px 外边距(14) 后再除以 7 */
+    /* 每行 7 张：视口宽减去牌桌内边距(12) + 牌托内边距与边框(22) + 13 张x1px 外边距(14) 后再除以 7 */
     --tile-w: clamp(30px, calc((100vw - 56px) / 7), 50px);
     /* 中央区被两侧座位夹住，出牌区收窄为「东西 3 列」，铭牌同步缩小，保证不越界 */
     --rv-gap: 2px;
@@ -706,7 +790,7 @@ html, body {
   #action-bar { bottom: calc(2 * var(--tile-h) + 30px); }
 }
 
-/* 横屏手机 / 矮屏：纵向空间紧张，收紧留白、压缩牌河与牌墙，保证整桌都在视口内 */
+/* 横屏手机 / 矮屏：纵向空间紧张，收紧空白、压缩牌河与牌墙，保证整桌都在视口内 */
 @media (max-height: 520px) {
   :root {
     --tile-w: clamp(20px, min(calc((100vw - 64px) / 14), calc((100vh - 300px) / 1.45)), 48px);
@@ -731,7 +815,7 @@ html, body {
   #me-panel { padding: 3px 12px; gap: 10px; }
   .hand { padding: 4px 10px 5px; min-height: calc(var(--tile-h) + 11px); }
   #center { gap: 3px; }
-  /* 矮屏把中间行（东西家的出牌区）加高，让侧家也能看到最新两三行弃牌 */
+  /* 矮屏把中间行 (东西家的出牌区) 加高，让侧家也能看到最新两三行弃牌 */
   #rivers {
     gap: 2px;
     grid-template-rows: minmax(0, 0.85fr) minmax(0, 1.7fr) minmax(0, 0.85fr);

@@ -1,6 +1,6 @@
 /**
- * game.js — 对局控制器：编排引擎 / AI / UI 的完整对局流程
- * 发牌 → 回合轮转（摸牌/杠/弃牌）→ 鸣牌结算（吃碰杠胡/抢杠）→ 和牌或荒庄 → 番型结算 → 连庄换庄 → 总结算
+ * game.js - 对局控制器：编排引擎 / AI / UI 的完整对局流程
+ * 发牌 → 回合轮转 (摸牌/杠/弃牌) → 鸣牌结算 (吃碰杠胡/抢杠) → 和牌或荒庄 → 番型结算 → 连庄换庄 → 总结算
  */
 (function (global) {
   'use strict';
@@ -16,24 +16,35 @@
       this.ai = new global.MJAI.MahjongAI(this.engine);
       this.ui = new global.MJUI.UI(this);
       this.running = false;
+      this._runId = 0;
+      this._topbarBound = false;
+    }
+
+    isAlive(runId) {
+      return this.running && (runId === undefined || this._runId === runId);
     }
 
     /* ---------- 入口 ---------- */
     async start() {
+      const runId = ++this._runId;
       this.running = true;
       this.bindTopbar();
       this.engine.startMatch();
-      await this.handLoop();
+      await this.handLoop(runId);
     }
 
     restart() {
+      this._runId++;
+      this.running = false;
+      if (this.ui.cancelPendingInteractions) this.ui.cancelPendingInteractions();
       this.ui.closeModal();
       this.ui.hideActions();
-      this.running = false;
       setTimeout(() => this.start(), 60);
     }
 
     bindTopbar() {
+      if (this._topbarBound) return;
+      this._topbarBound = true;
       const ui = this.ui;
       ui.$('btn-sound').addEventListener('click', () => {
         ui.sound.muted = !ui.sound.muted;
@@ -67,9 +78,10 @@
     }
 
     /* ---------- 局循环 ---------- */
-    async handLoop() {
-      while (this.running) {
-        const result = await this.playHand();
+    async handLoop(runId) {
+      while (this.isAlive(runId)) {
+        const result = await this.playHand(runId);
+        if (!this.isAlive(runId) || !result) return;
         if (result.isDraw) {
           this.engine.updateTenpaiFlags();
           const tenpai = this.engine.settleDraw();
@@ -78,12 +90,13 @@
         } else {
           await this.ui.showSettlement(result.settleData);
         }
-        if (!this.running) return;
+        if (!this.isAlive(runId)) return;
 
-        // nextHand 返回 false 表示整场（东1~南4 共 8 局）结束
+        // nextHand 返回 false 表示整场 (东1~南4 共 8 局) 结束
         if (this.engine.matchOver || !this.engine.nextHand(result.dealerWon, result.isDraw)) {
           this.engine.matchOver = true;
           const again = await this.ui.showMatchOver();
+          if (!this.isAlive(runId)) return;
           if (again === 'again') { this.restart(); return; }
           this.running = false;
           return;
@@ -94,10 +107,12 @@
     }
 
     /* ---------- 单局 ---------- */
-    async playHand() {
+    async playHand(runId) {
       await this.ui.animateDeal();
+      if (!this.isAlive(runId)) return null;
       let guard = 0;
-      while (this.running && guard++ < 400) {
+      let justClaimedPongOrChi = false;
+      while (this.isAlive(runId) && guard++ < 400) {
         const p = this.engine.players[this.engine.turn];
         this.ui.setTurn(p.id);
 
@@ -105,44 +120,59 @@
           const tile = this.engine.drawTile(p);
           if (tile === null) return { isDraw: true, dealerWon: false };
           await this.ui.animateDraw(p.id, tile);
+          if (!this.isAlive(runId)) return null;
           this.ui.renderTopbar();
+        }
 
-          // 自摸和牌
+        // 正常摸牌、庄家首巡起手 14 张、或杠后补完岭上牌时，均可判定自摸和牌与暗杠/加杠
+        if (!justClaimedPongOrChi) {
           if (this.engine.canWin(p)) {
             let take;
             if (p.isHuman) {
-              this.ui.toast('可以和牌！');
+              this.ui.toast(p.lastDrawWasReplacement ? '杠上开花！' : '可以和牌！');
               take = await this.ui.askSelfDraw();
             } else {
               await delay(aiThink());
               take = true; // AI 和牌必取
             }
-            if (take) return this.win(p, { selfDraw: true, haitei: p.lastDrawWasLast });
+            if (!this.isAlive(runId)) return null;
+            if (take) {
+              return this.win(p, {
+                selfDraw: true,
+                rinshan: !!p.lastDrawWasReplacement,
+                haitei: !!p.lastDrawWasLast,
+              });
+            }
           }
 
-          // 杠（暗杠 / 加杠）
+          // 杠 (暗杠 / 加杠)
           if (p.isHuman) {
             const kongs = [];
             this.engine.findConcealedKongs(p).forEach(t => kongs.push({ kind: 'concealed', tile: t }));
             this.engine.findAddedKongs(p).forEach(t => kongs.push({ kind: 'added', tile: t }));
             if (kongs.length) {
               const k = await this.ui.askKong(kongs);
+              if (!this.isAlive(runId)) return null;
               if (k) {
-                const r = await this.doKong(p, k);
+                const r = await this.doKong(p, k, runId);
+                if (!this.isAlive(runId)) return null;
                 if (r) return r;
-                continue; // 杠后进入舍牌
+                continue; // 杠后已摸岭上牌，回到循环顶部检测杠上开花或连续杠
               }
             }
           } else {
-            await delay(aiThink());
             const k = this.ai.decideKong(p);
             if (k) {
-              const r = await this.doKong(p, k);
+              await delay(aiThink());
+              if (!this.isAlive(runId)) return null;
+              const r = await this.doKong(p, k, runId);
+              if (!this.isAlive(runId)) return null;
               if (r) return r;
               continue;
             }
           }
         }
+        justClaimedPongOrChi = false;
 
         // 舍牌
         let tile;
@@ -152,33 +182,40 @@
           await delay(aiThink());
           tile = this.ai.chooseDiscard(p);
         }
-        if (tile === undefined || tile === null) tile = p.hand[p.hand.length - 1];
+        if (!this.isAlive(runId)) return null;
+        if (tile === undefined || tile === null || !p.hand.includes(tile)) {
+          tile = p.hand[p.hand.length - 1];
+        }
 
         this.engine.discard(p, tile);
         this.ui.animateDiscard(p.id, tile);
         await delay(300);
+        if (!this.isAlive(runId)) return null;
 
         // 鸣牌结算
-        const outcome = await this.resolveClaims();
+        const outcome = await this.resolveClaims(runId);
+        if (!this.isAlive(runId)) return null;
         if (outcome.win || outcome.isDraw) return outcome;
-        if (!outcome.claimed) {
+        if (outcome.claimed) {
+          justClaimedPongOrChi = !outcome.fromKong;
+        } else {
           this.engine.turn = (this.engine.turn + 1) % 4;
         }
       }
       return { isDraw: true, dealerWon: false };
     }
 
-    /* ---------- 杠流程（含抢杠与岭上开花） ---------- */
-    async doKong(p, k) {
+    /* ---------- 杠流程 (含抢杠与岭上摸牌) ---------- */
+    async doKong(p, k, runId) {
       if (k.kind === 'concealed') this.engine.declareConcealedKong(p, k.tile);
       else this.engine.declareAddedKong(p, k.tile);
-      this.engine.settleKongPoints(p, k.kind === 'concealed');
       this.ui.renderAll();
       this.ui.sound.kong();
       this.ui.flash('杠', 'kong');
       await delay(620);
+      if (!this.isAlive(runId)) return null;
 
-      // 抢杠（仅加杠可抢）
+      // 抢杠 (仅加杠可抢；被抢杠则加杠不成立，不结算杠分)
       const rob = this.engine.robKongOptions();
       if (rob.length) {
         for (const r of rob) {
@@ -186,6 +223,7 @@
           let take;
           if (rp.isHuman) take = await this.ui.askRobKong(r.tile);
           else { await delay(aiThink()); take = this.ai.decideRobKong(rp, r.tile); }
+          if (!this.isAlive(runId)) return null;
           if (take) {
             this.ui.toast('抢杠和牌！');
             return this.win(rp, { robKong: true, fromDiscard: p.id });
@@ -193,37 +231,31 @@
         }
       }
 
-      // 岭上摸牌
+      // 未被抢杠，结算杠分并摸岭上牌
+      this.engine.settleKongPoints(p, k.kind === 'concealed');
+      this.ui.renderAll();
+
       const t2 = this.engine.drawTile(p, true);
       if (t2 === null) return { isDraw: true, dealerWon: false };
       await this.ui.animateDraw(p.id, t2);
+      if (!this.isAlive(runId)) return null;
       this.ui.renderTopbar();
-
-      // 杠上开花
-      if (this.engine.canWin(p)) {
-        if (p.isHuman) {
-          this.ui.toast('杠上开花！');
-          const take = await this.ui.askSelfDraw();
-          if (take) return this.win(p, { selfDraw: true, rinshan: true });
-        } else {
-          return this.win(p, { selfDraw: true, rinshan: true });
-        }
-      }
       return null;
     }
 
     /* ---------- 鸣牌结算 ---------- */
-    async resolveClaims() {
+    async resolveClaims(runId) {
       const discarder = this.engine.lastDiscarder;
       const opts = this.engine.claimOptions(discarder, this.engine.lastDiscard);
       if (!opts.length) return {};
 
       const decided = [];
-      // AI 决策（带思考延时，按座位顺序；每个玩家只决策一次）
+      // AI 决策 (带思考延时，按座位顺序；每个玩家只决策一次)
       const aiSeats = [...new Set(opts.filter(o => o.player !== 0).map(o => o.player))].sort((a, b) => a - b);
       for (const pid of aiSeats) {
         const p = this.engine.players[pid];
         await delay(aiThink() * 0.55);
+        if (!this.isAlive(runId)) return {};
         const dec = this.ai.decideClaim(opts.filter(x => x.player === pid), p);
         if (dec) decided.push(dec);
       }
@@ -231,18 +263,20 @@
       const myOpts = opts.filter(o => o.player === 0);
       if (myOpts.length) {
         const dec = await this.ui.askClaim(0, myOpts);
+        if (!this.isAlive(runId)) return {};
         if (dec) decided.push(dec);
       }
       if (!decided.length) return {};
 
-      // 优先级：和 > 杠 > 碰 > 吃，同级按座位序
+      // 优先级：和 > 杠 > 碰 > 吃，同级按距出牌者的逆时针座序优先 (截胡)
       const rank = { win: 0, kong: 1, pong: 2, chi: 3 };
-      decided.sort((a, b) => rank[a.type] - rank[b.type] || a.player - b.player);
+      const dist = (pid) => (pid - discarder + 4) % 4;
+      decided.sort((a, b) => rank[a.type] - rank[b.type] || dist(a.player) - dist(b.player));
       const d0 = decided[0];
-      const pl = this.engine.players[d0.player];
+      const p1 = this.engine.players[d0.player];
 
       if (d0.type === 'win') {
-        return this.win(pl, { selfDraw: false, fromDiscard: discarder, haitei: this.engine.wall.length === 0 });
+        return this.win(p1, { selfDraw: false, fromDiscard: discarder, haitei: false });
       }
       if (d0.type === 'pong') {
         this.engine.applyPong(d0.player);
@@ -253,24 +287,15 @@
       }
       if (d0.type === 'kong') {
         this.engine.applyKongFromDiscard(d0.player);
-        this.engine.settleKongPoints(pl, false);
+        this.engine.settleKongPoints(p1, false);
         await this.ui.animateClaim(d0.player, 'kong');
         this.ui.renderAll();
         await delay(420);
-        const t2 = this.engine.drawTile(pl, true);
+        const t2 = this.engine.drawTile(p1, true);
         if (t2 === null) return { isDraw: true, dealerWon: false };
-        await this.ui.animateDraw(pl.id, t2);
+        await this.ui.animateDraw(p1.id, t2);
         this.ui.renderTopbar();
-        if (this.engine.canWin(pl)) {
-          if (pl.isHuman) {
-            this.ui.toast('杠上开花！');
-            const take = await this.ui.askSelfDraw();
-            if (take) return this.win(pl, { selfDraw: true, rinshan: true });
-          } else {
-            return this.win(pl, { selfDraw: true, rinshan: true });
-          }
-        }
-        return { claimed: true };
+        return { claimed: true, fromKong: true };
       }
       if (d0.type === 'chi') {
         const combo = d0.combo || (d0.combos && d0.combos[0]);
@@ -298,9 +323,9 @@
         fromDiscard: opts.fromDiscard !== undefined ? opts.fromDiscard : -1,
         result, payments, winTile,
       };
-      return { win: true, isDraw: false, dealerWon: winner.dealer, settleData: data };
+      return { win: true, dealerWon: winner.dealer, settleData: data };
     }
   }
 
   global.MJGame = { GameController };
-})(window);
+})(typeof window !== 'undefined' ? window : this);

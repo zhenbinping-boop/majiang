@@ -1,6 +1,6 @@
 /**
- * ui.js — 界面渲染、动画、交互与弹窗
- * 依赖全局 MJ（牌面 SVG/音效）、MJEngine（赔率表/金币）与 controller（对局控制器）
+ * ui.js - 界面渲染、动画、交互与弹窗
+ * 依赖全局 MJ (牌面 SVG/音效)、MJEngine (赔率表/金币) 与 controller (对局控制器)
  */
 (function (global) {
   'use strict';
@@ -16,18 +16,25 @@
   const SEAT_DOM = { 1: 'seat-1', 2: 'seat-2', 3: 'seat-3' };
   const delay = (ms) => new Promise(r => setTimeout(r, ms));
 
-  /** 千分位金币：5000 → 5,000 */
+  /** 千分位金币：5000 -> 5,000 */
   function fmtCoins(n) {
     const v = Math.round(n) || 0;
     const s = String(Math.abs(v));
     return (v < 0 ? '-' : '') + s.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   }
-  /** 席位面板用紧凑写法：500000 → 50万 */
+  /** 席位面板紧凑写法：500000 -> 50万 */
   function coinShort(n) {
     const v = Math.round(n) || 0;
     if (Math.abs(v) < 100000) return fmtCoins(v);
     const w = v / 10000;
     return (Math.abs(w - Math.round(w)) < 0.05 ? Math.round(w).toString() : w.toFixed(1)) + '万';
+  }
+
+  function removeOne(tiles, t) {
+    const a = tiles.slice();
+    const i = a.indexOf(t);
+    if (i >= 0) a.splice(i, 1);
+    return a;
   }
 
   class UI {
@@ -36,15 +43,62 @@
       this.engine = controller.engine;
       this.sound = new MJ.Sound();
       this.selectedTile = null;
+      this.selectedIdx = -1;
       this.freshTile = null;      // 刚摸到的那张（用于金色高亮，不随重渲染重复播放动画）
       this.handClickResolve = null;
       this.actionResolve = null;
       this.actionTimer = null;
       this.riverCount = 0;
+      this._tingMap = new Map();  // Map<discardTile, { total, live: { [winTile]: count } }>
       this.$ = (id) => document.getElementById(id);
+      this._bindKeyboard();
     }
 
-    /* ================= 基础元素 ================= */
+    /** 绑定键盘快捷操作：左右方向键选牌、Enter/Space 出牌、Esc 关闭规则弹窗 */
+    _bindKeyboard() {
+      if (typeof document === 'undefined' || !document.addEventListener) return;
+      document.addEventListener('keydown', (e) => {
+        if (!e) return;
+        if (e.key === 'Escape') {
+          const root = this.$('modal-root');
+          if (root && root.firstChild && this._modalClosable) {
+            this.sound.tick();
+            this.closeModal();
+          }
+          return;
+        }
+        if (!this.handClickResolve) return;
+        const p = this.engine.players[0];
+        if (!p || !p.hand.length) return;
+        const box = this.$('my-hand');
+        const els = box && box.querySelectorAll ? [...box.querySelectorAll('.tile')] : [];
+        if (!els.length) return;
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          const dir = e.key === 'ArrowRight' ? 1 : -1;
+          const nextIdx = this.selectedIdx < 0
+            ? (dir > 0 ? 0 : els.length - 1)
+            : (this.selectedIdx + dir + els.length) % els.length;
+          this.selectHandTileAt(nextIdx, p.hand[nextIdx], els[nextIdx]);
+        } else if ((e.key === 'Enter' || e.key === ' ') && this.selectedTile !== null) {
+          e.preventDefault();
+          this.resolveHandDiscard(this.selectedTile);
+        }
+      });
+    }
+
+    /** 清理挂起中的交互 Promise 与定时器（供重新开局安全重置） */
+    cancelPendingInteractions() {
+      this.clearActionTimer();
+      this.handClickResolve = null;
+      this.actionResolve = null;
+      this.selectedTile = null;
+      this.selectedIdx = -1;
+      this.highlightSameTiles(null);
+      this.hideTingTip();
+    }
+
+    /* =============== 基础元素 =============== */
     tileEl(t, opts = {}) {
       const d = document.createElement('div');
       d.className = 'tile' + (opts.small ? ' sm' : '') + (opts.cls ? ' ' + opts.cls : '');
@@ -59,7 +113,86 @@
       return d;
     }
 
-    /* ================= 整手渲染 ================= */
+    /* =============== 听牌计算与桌面联动高亮 =============== */
+
+    /** 计算当前我的手牌若打出某张后可听哪些牌（Map<tile, { total, live }>） */
+    computeMyTingMap() {
+      const map = new Map();
+      const p = this.engine.players[0];
+      if (!p || !this.ctrl || !this.ctrl.ai) return map;
+      const meldCount = p.melds.length;
+      if (p.hand.length !== 14 - meldCount * 3) return map;
+      const visible = this.ctrl.ai.visibleCounts(p);
+      const seen = new Set();
+      for (const t of p.hand) {
+        if (seen.has(t)) continue;
+        seen.add(t);
+        const rest = removeOne(p.hand, t);
+        const uke = this.ctrl.ai.liveUkeire(rest, meldCount, visible);
+        if (uke.shanten === 0) {
+          map.set(t, uke);
+        }
+      }
+      return map;
+    }
+
+    /** 高亮牌河与副露中与指定牌相同的牌面 */
+    highlightSameTiles(tileIdx) {
+      const table = this.$('table');
+      if (!table || !table.querySelectorAll) return;
+      const all = table.querySelectorAll('.tile');
+      const target = tileIdx === null || tileIdx === undefined ? null : String(tileIdx);
+      for (const el of all) {
+        if (target !== null && el.dataset && el.dataset.tile === target) {
+          el.classList.add('same-match');
+        } else {
+          el.classList.remove('same-match');
+        }
+      }
+    }
+
+    /** 展示听牌提示条（显示打该牌后可胡的牌面与剩余张数） */
+    showTingTip(uke, prefixText) {
+      const panel = this.$('me-panel');
+      if (!panel) return;
+      let tip = this.$('ting-tip');
+      if (!tip) {
+        tip = this.el('div', 'ting-tip hidden');
+        tip.id = 'ting-tip';
+        const me = this.$('me');
+        if (me && me.insertBefore) me.insertBefore(tip, panel);
+      }
+      const entries = Object.keys(uke.live || {}).map(k => ({ tile: +k, left: uke.live[k] }));
+      if (!entries.length) {
+        tip.innerHTML = `<span class="ting-label">${prefixText || '听牌'}</span><span class="ting-empty">所听之牌已全部现出 (0 张)</span>`;
+      } else {
+        const items = entries.map(e =>
+          `<span class="ting-item"><span class="ting-svg">${MJ.tileFaceSVG(e.tile)}</span><span class="ting-cnt">${e.left}张</span></span>`
+        ).join('');
+        tip.innerHTML = `<span class="ting-label">${prefixText || '听'} · 共 ${uke.total} 张</span><div class="ting-list">${items}</div>`;
+      }
+      tip.classList.remove('hidden');
+    }
+
+    hideTingTip() {
+      const tip = this.$('ting-tip');
+      if (tip) tip.classList.add('hidden');
+    }
+
+    /** 非出牌阶段若已处于听牌状态，则在状态栏旁展示当前所听之牌 */
+    refreshPassiveTingTip() {
+      const p = this.engine.players[0];
+      if (!p || !this.ctrl || !this.ctrl.ai) return;
+      if (p.hand.length === 13 - p.melds.length * 3 && this.engine.isTenpai(p)) {
+        const visible = this.ctrl.ai.visibleCounts(p);
+        const uke = this.ctrl.ai.liveUkeire(p.hand, p.melds.length, visible);
+        this.showTingTip(uke, '当前听牌');
+      } else {
+        this.hideTingTip();
+      }
+    }
+
+    /* =============== 整手渲染 =============== */
     renderAll() {
       this.renderTopbar();
       this.renderMySeat();
@@ -101,8 +234,8 @@
     }
 
     /**
-     * 副露（吃 / 碰 / 杠）：摆在该玩家身旁。
-     * 被鸣的那张（来自他家弃牌）加金框标记，一眼看清是从谁那里吃碰来的。
+     * 副露 (吃 / 碰 / 杠)：摆在该玩家身旁。
+     * 被鸣的那张 (来自他家弃牌) 加金框标记，一眼看清是从谁那里吃碰来的。
      */
     meldEl(m, small) {
       const g = this.el('div', 'meld');
@@ -134,12 +267,14 @@
       const p = this.engine.players[0];
       const box = this.$('my-hand');
       box.innerHTML = '';
+      this._tingMap = this.computeMyTingMap();
       let freshIdx = -1;
       if (this.freshTile !== null && this.freshTile !== undefined) {
         for (let i = p.hand.length - 1; i >= 0; i--) if (p.hand[i] === this.freshTile) { freshIdx = i; break; }
       }
       p.hand.forEach((t, i) => {
-        const el = this.tileEl(t, { cls: 'playable' });
+        const canTing = this._tingMap.has(t);
+        const el = this.tileEl(t, { cls: 'playable' + (canTing ? ' can-ting' : '') });
         if (opts.animate) {
           el.style.animation = 'deal-in .32s both';
           el.style.animationDelay = (i * 0.035).toFixed(3) + 's';
@@ -148,11 +283,26 @@
           el.classList.add('last-drawn');
           if (opts.freshAnimate) el.classList.add('just-drawn');
         }
-        el.addEventListener('click', () => this.onHandTileClick(t, el));
+        el.addEventListener('click', () => this.onHandTileClick(t, el, i));
         el.addEventListener('dblclick', () => this.resolveHandDiscard(t));
+        el.addEventListener('mouseenter', () => {
+          if (this.selectedTile === null) {
+            this.highlightSameTiles(t);
+            if (canTing) this.showTingTip(this._tingMap.get(t), `打 ${MJ.tileName(t)} 听`);
+          }
+        });
+        el.addEventListener('mouseleave', () => {
+          if (this.selectedTile === null) {
+            this.highlightSameTiles(null);
+            this.refreshPassiveTingTip();
+          }
+        });
         box.appendChild(el);
       });
       this.selectedTile = null;
+      this.selectedIdx = -1;
+      this.highlightSameTiles(null);
+      this.refreshPassiveTingTip();
     }
 
     renderAISeat(pid) {
@@ -166,11 +316,11 @@
       const info = this.el('div');
       info.innerHTML = this.seatInfoHTML(p);
 
-      // 牌墙：对家横排、左右家竖排（牌背横置，模拟桌沿视角）
+      // 牌墙：对家横排、左右家竖排 (牌背横置，模拟桌沿视角)
       const backs = this.el('div', 'seat-backs ' + (isTop ? 'h' : 'v'));
       for (let i = 0; i < p.hand.length; i++) backs.appendChild(this.tileEl(0, { back: true, orient: isTop ? '' : 'side' }));
 
-      // 副露摆在手牌与桌心之间，形成「身份 → 手牌 → 副露 → 牌河」的空间顺序
+      // 副露摆在手牌与桌心之间，形成“自身 - 手牌 - 副露 - 牌河”的空间顺序
       const melds = this.el('div', isTop ? 'melds' : 'side-melds');
       p.melds.forEach(m => melds.appendChild(this.meldEl(m, true)));
 
@@ -184,7 +334,7 @@
 
     /**
      * 四家各自的出牌区：每家正前方一块，互不混放。
-     * 全桌最新一张弃牌带悬浮光标；只有新落的牌播放入场动画（重渲染不重播）。
+     * 全桌最新一张弃牌带悬浮光标；只有新落的牌播放入场动画 (重渲染不重播)。
      */
     renderRivers(opts = {}) {
       const seen = this._riverSeen || (this._riverSeen = [0, 0, 0, 0]);
@@ -211,7 +361,7 @@
         const panel = this.$('panel-' + i);
         if (panel) panel.classList.toggle('active', i === pid);
       }
-      // 中央铭牌上高亮当前行动家（座风字点亮）
+      // 中央铭牌上高亮当前行动家 (座风字点亮)
       for (let i = 0; i < 4; i++) {
         const m = this.$('cpm-' + i);
         if (m) m.classList.toggle('hot', i === pid);
@@ -220,20 +370,20 @@
       this.$('turn-banner').textContent = pid === 0 ? '轮到你出牌' : `轮到 ${s.name} 出牌`;
     }
 
-    /* ================= 浮字（吃 / 碰 / 杠 / 胡） ================= */
+    /* =============== 浮字 (吃 / 碰 / 杠 / 胡) =============== */
     flash(text, kind) {
       const el = this.$('action-flash');
       if (!el) return;
       el.textContent = text;
       el.className = 'k-' + kind;
-      void el.offsetWidth;             // 强制重排，保证动画可重复触发
+      void el.offsetWidth;          // 强制重排，保证动画可重复触发
       el.classList.add('show');
       clearTimeout(this._flashTimer);
       this._flashTimer = setTimeout(() => el.classList.remove('show'), 960);
     }
 
-    /* ================= 动画 ================= */
-    /** 发牌：全量渲染一次，随后手牌逐张轻落（无缩放、无回弹），不再二次重渲染造成跳动 */
+    /* =============== 动画 =============== */
+    /** 发牌：全量渲染一次，随后手牌逐张轻落 (无缩放、无回弹)，不再二次重渲染造成跳动 */
     async animateDeal() {
       this.freshTile = null;
       this.riverCount = 0;
@@ -267,7 +417,7 @@
       this.sound.clack();
     }
 
-    /** 鸣牌：音效（合成撞击 + 女声喊牌）与浮字同步动作 */
+    /** 鸣牌：音效 (合成撞击 + 女声喊牌) 与浮字同步动作 */
     async animateClaim(pid, kind) {
       const text = { chi: '吃', pong: '碰', kong: '杠' }[kind] || '碰';
       if (kind === 'chi') this.sound.chi();
@@ -278,18 +428,31 @@
       await delay(430);
     }
 
-    /* ================= 交互：我的弃牌 ================= */
-    onHandTileClick(t, el) {
+    /* =============== 交互：我的出牌 =============== */
+    selectHandTileAt(idx, t, el) {
+      const box = this.$('my-hand');
+      if (box && box.querySelectorAll) {
+        box.querySelectorAll('.tile.selected').forEach(e => e.classList.remove('selected'));
+      }
+      if (el) el.classList.add('selected');
+      this.selectedTile = t;
+      this.selectedIdx = idx;
+      this.highlightSameTiles(t);
+      if (this._tingMap && this._tingMap.has(t)) {
+        this.showTingTip(this._tingMap.get(t), `打 ${MJ.tileName(t)} 听`);
+      } else {
+        this.hideTingTip();
+      }
+    }
+
+    onHandTileClick(t, el, idx = -1) {
       if (!this.handClickResolve) return; // 非本人回合忽略点击
       this.sound.tick();
       if (this.selectedTile === t) {
         this.resolveHandDiscard(t);
         return;
       }
-      const box = this.$('my-hand');
-      box.querySelectorAll('.tile.selected').forEach(e => e.classList.remove('selected'));
-      el.classList.add('selected');
-      this.selectedTile = t;
+      this.selectHandTileAt(idx, t, el);
     }
 
     resolveHandDiscard(t) {
@@ -297,16 +460,19 @@
       const resolve = this.handClickResolve;
       this.handClickResolve = null;
       this.selectedTile = null;
+      this.selectedIdx = -1;
+      this.highlightSameTiles(null);
       resolve(t);
     }
 
     /** 等待玩家点击手牌弃牌 */
     askDiscard() {
-      this.showHint('点击手牌出牌（双击快速出牌）');
+      const hasTingMove = this._tingMap && this._tingMap.size > 0;
+      this.showHint(hasTingMove ? '点击手牌出牌 · 标「听」之牌打出即听牌' : '点击手牌出牌 (双击快速出牌)');
       return new Promise(resolve => { this.handClickResolve = resolve; });
     }
 
-    /* ================= 操作栏 ================= */
+    /* =============== 操作栏 =============== */
     showHint(text) {
       this.$('turn-banner').textContent = text;
     }
@@ -370,9 +536,9 @@
       });
     }
 
-    /* ================= 交互：鸣牌询问 ================= */
+    /* =============== 交互：鸣牌询问 =============== */
     async askClaim(pid, options) {
-      this.showHint('请选择动作（不选将自动跳过）');
+      this.showHint('请选择动作 (不选将自动跳过)');
       const buttons = [];
       const win = options.find(o => o.type === 'win');
       if (win) buttons.push({ label: '和', cls: 'win', value: win });
@@ -426,8 +592,9 @@
       ], 10);
     }
 
-    /* ================= 弹窗 ================= */
-    openModal(contentNode) {
+    /* =============== 弹窗 =============== */
+    openModal(contentNode, closableByEsc = false) {
+      this._modalClosable = !!closableByEsc;
       const root = this.$('modal-root');
       root.innerHTML = '';
       const mask = this.el('div', 'modal-mask');
@@ -437,7 +604,10 @@
       root.appendChild(mask);
       return { mask, modal };
     }
-    closeModal() { this.$('modal-root').innerHTML = ''; }
+    closeModal() {
+      this._modalClosable = false;
+      this.$('modal-root').innerHTML = '';
+    }
 
     /** 金币数字滚动 */
     countUp(node, target, dur) {
@@ -458,7 +628,7 @@
 
     winHandNodes(p, winTile, isSeven) {
       const box = this.el('div', 'win-hand-box');
-      box.appendChild(this.el('div', 'label', '和 牌 牌 型'));
+      box.appendChild(this.el('div', 'label', '和 牌 型'));
       const row = this.el('div', 'win-tiles');
       p.melds.forEach(m => {
         const g = this.el('div', 'meld');
@@ -466,13 +636,18 @@
         row.appendChild(g);
       });
       const hand = p.hand.concat([winTile]).sort((a, b) => a - b);
-      hand.forEach(t => row.appendChild(this.tileEl(t, { small: true, cls: t === winTile ? 'win-tile' : '' })));
+      let markedWin = false;
+      hand.forEach(t => {
+        const isWin = !markedWin && t === winTile;
+        if (isWin) markedWin = true;
+        row.appendChild(this.tileEl(t, { small: true, cls: isWin ? 'win-tile' : '' }));
+      });
       box.appendChild(row);
       return box;
     }
 
     /**
-     * 结算弹窗（金币制）
+     * 结算弹窗 (金币制)
      * 清晰展示：底注 / 各牌型倍率 / 合计倍率 / 每家支付 / 最终赢得金额 / 各家金币变化
      */
     showSettlement(data) {
@@ -481,16 +656,16 @@
         const w = this.engine.players[winner];
         const node = document.createDocumentFragment();
         node.appendChild(this.el('h2', '', selfDraw ? '自 摸' : '和 牌'));
-        const fromTxt = selfDraw ? '自摸和牌' : `由 ${SEAT_INFO[fromDiscard] ? SEAT_INFO[fromDiscard].name : '对家'} 放炮`;
+        const fromTxt = selfDraw ? '自摸和牌' : `由 ${SEAT_INFO[fromDiscard] ? SEAT_INFO[fromDiscard].name : '对家'} 点炮`;
         node.appendChild(this.el('div', 'subtitle',
-          `${SEAT_INFO[winner].name} ${fromTxt}　·　合计倍率 ×${result.totalMult}`));
+          `${SEAT_INFO[winner].name} ${fromTxt} · 合计倍率 ×${result.totalMult}`));
         node.appendChild(this.winHandNodes(w, winTile, result.isSeven));
 
         // 赔率明细
         const table = this.el('table', 'fan-table');
         result.fans.forEach(f => {
           const tr = document.createElement('tr');
-          tr.innerHTML = `<td>${f.name}${f.desc ? `<span class="desc">${f.desc}</span>` : ''}</td><td>×${f.mult}</td>`;
+          tr.innerHTML = `<td>${f.name}${f.desc ? ` <span class="desc">${f.desc}</span>` : ''}</td><td>×${f.mult}</td>`;
           table.appendChild(tr);
         });
         const tr = document.createElement('tr');
@@ -504,7 +679,7 @@
         board.innerHTML =
           `<div class="coin-line"><span>底注</span><b>${fmtCoins(result.baseBet)}</b></div>` +
           `<div class="coin-line"><span>合计倍率</span><b>×${result.totalMult}</b></div>` +
-          `<div class="coin-line"><span>${selfDraw ? '每家支付（三家）' : '放炮者支付'}</span><b>${fmtCoins(result.perPayer)}</b></div>` +
+          `<div class="coin-line"><span>${selfDraw ? '每家支付 (三家)' : '放炮者支付'}</span><b>${fmtCoins(result.perPayer)}</b></div>` +
           `<div class="coin-line win"><span>本局赢得</span><b id="win-coin">0</b><span class="unit">金币</span></div>`;
         node.appendChild(board);
 
@@ -516,8 +691,8 @@
           const cls = pay.delta > 0 ? 'plus' : (pay.delta < 0 ? 'minus' : '');
           const sign = pay.delta > 0 ? '+' : '';
           row.innerHTML = `
-            <span class="who"><span class="avatar" style="background:${SEAT_INFO[p.id].color};width:24px;height:24px;font-size:11px">${SEAT_INFO[p.id].avatar}</span>${SEAT_INFO[p.id].name}</span>
-            <span class="delta ${cls}">${pay.delta === 0 ? '—' : sign + fmtCoins(pay.delta)}（${fmtCoins(p.score)}）</span>`;
+            <span class="who"><span class="avatar" style="background:${SEAT_INFO[p.id].color};width:24px;height:24px;font-size:12px">${SEAT_INFO[p.id].avatar}</span>${SEAT_INFO[p.id].name}</span>
+            <span class="delta ${cls}">${pay.delta === 0 ? '-' : sign + fmtCoins(pay.delta)} (${fmtCoins(p.score)})</span>`;
           scoreBox.appendChild(row);
         });
         node.appendChild(scoreBox);
@@ -541,7 +716,7 @@
         const node = document.createDocumentFragment();
         node.appendChild(this.el('h2', '', '荒 庄'));
         const names = tenpaiList.map(i => SEAT_INFO[i].name).join('、');
-        node.appendChild(this.el('div', 'subtitle', tenpaiList.length ? `听牌：${names}（不结算金币）` : '无人听牌'));
+        node.appendChild(this.el('div', 'subtitle', tenpaiList.length ? `听牌：${names} (不结算金币)` : '无人听牌'));
         const btns = this.el('div', 'modal-btns');
         const ok = this.el('button', 'act-btn', '继 续');
         ok.type = 'button';
@@ -591,23 +766,24 @@
       body.innerHTML = `
         <h3>基本</h3>
         <ul>
-          <li>四人麻将，136 张牌（万、筒、条 + 东南西北中发白），无花牌。</li>
+          <li>四人麻将，136 张牌 (万、筒、条 + 东南西北中发白)，无花牌。</li>
           <li>起手 13 张，庄家 14 张先出；轮流摸牌打牌，先组成 4 组面子 + 1 对雀头者胜。</li>
-          <li>面子 = 顺子（如 234 万）或刻子（如 3 张东风）；也支持七对子。</li>
+          <li>面子 = 顺子 (如 234 万) 或刻子 (如 3 张东风)；也支持七对子。</li>
         </ul>
-        <h3>操作</h3>
+        <h3>操作与辅助</h3>
         <ul>
-          <li><b>吃</b>：仅上家（左手边）打出的牌可吃，须与手牌组成顺子。</li>
+          <li><b>吃</b>：仅上家 (左手边) 打出的牌可吃，须与手牌组成顺子。</li>
           <li><b>碰</b>：任何一家打出的牌，手中有 2 张即可碰。</li>
-          <li><b>杠</b>：手牌 4 张相同可暗杠；碰过后再摸到可加杠；他人打出第 4 张可明杠。杠后摸一张岭上牌，且可被抢杠。</li>
-          <li><b>和</b>：摸到所需牌为自摸；他人打出所需牌为点和。</li>
+          <li><b>杠</b>：手牌 4 张相同可暗杠；碰过后再摸到可加杠；他人打出第 4 张可明杠。杠后摸一张岭上牌，加杠可被抢杠。</li>
+          <li><b>和</b>：摸到所需牌为自摸；他人打出所需牌为点炮。</li>
+          <li><b>听牌辅助</b>：出牌时带「听」角标的牌打出即可听牌，悬停或选中手牌可实时查看所听牌张及牌桌同名牌高亮；支持方向键选牌、回车/空格出牌。</li>
         </ul>
         <h3>金币结算</h3>
         <ul>
           <li>开局每人 <b>${fmtCoins(E.START_SCORE || 0)}</b> 金币，底注 <b>${fmtCoins(E.BASE_BET || 0)}</b> 金币。</li>
-          <li>不同牌型倍率不同，<b>最终倍率 = 各倍率之积</b>（封顶 ×${E.MULT_CAP || 0}），牌型越大赔率越高。</li>
+          <li>不同牌型倍率不同，<b>最终倍率 = 各倍率之积</b> (封顶 ×${E.MULT_CAP || 0})，按高点法择优结算。</li>
           <li>点炮：放炮者独付「底注 × 倍率」；自摸：三家各付「底注 × 倍率 ÷ 2」，赢家共得三份。</li>
-          <li>暗杠每家付 ${fmtCoins((E.KONG_COIN || {}).concealed || 0)}，明杠 / 加杠每家付 ${fmtCoins((E.KONG_COIN || {}).open || 0)}，即时结算。</li>
+          <li>暗杠每家付 ${fmtCoins((E.KONG_COIN || {}).concealed || 0)}，明杠 / 加杠每家付 ${fmtCoins((E.KONG_COIN || {}).open || 0)}。</li>
           <li>庄家和牌或荒庄听牌则连庄，否则下家坐庄；东一局至南四局共 8 局后总结算。</li>
         </ul>
         <h3>赔率表</h3>
@@ -615,12 +791,12 @@
         <div class="odds-grid">${odds}</div>`;
       node.appendChild(body);
       const btns = this.el('div', 'modal-btns');
-      const ok = this.el('button', 'act-btn', '知道了');
+      const ok = this.el('button', 'act-btn', '知 道 了');
       ok.type = 'button';
       ok.addEventListener('click', () => { this.sound.tick(); this.closeModal(); });
       btns.appendChild(ok);
       node.appendChild(btns);
-      this.openModal(node);
+      this.openModal(node, true);
     }
 
     toast(text, ms = 1800) {
