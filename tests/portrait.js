@@ -51,6 +51,10 @@ const CASES = [
     await page.goto(BASE + '/index.html', { waitUntil: 'networkidle0' });
     await sleep(900);
 
+    // ── 关键简化 ──
+    // #app 旋转后仍铺满整个视口（coversViewport 已验证），故「某元素是否在视口内」
+    // 等价于「其屏幕包围盒是否落在 #app 的屏幕包围盒内」；「两元素是否重叠」在旋转下
+    // 也是不变量（相交性不随旋转改变）。因此这里无需任何坐标反解，直接用 rect 判断。
     const r = await page.evaluate(() => {
       const app = document.getElementById('app');
       const vw = window.innerWidth, vh = window.innerHeight;
@@ -66,43 +70,43 @@ const CASES = [
           deg = Math.round(Math.atan2(b, a) * 180 / Math.PI);
         }
       }
+      const ROTATED = Math.abs(deg) > 45;
+      // 参照系 = #app 的屏幕包围盒（旋转下即整个视口）
+      const IN = (b) => b.left >= ab.left - 1 && b.top >= ab.top - 1 &&
+                        b.right <= ab.right + 1 && b.bottom <= ab.bottom + 1;
       const rect = (sel) => {
         const e = document.querySelector(sel);
         if (!e) return null;
         const b = e.getBoundingClientRect();
         return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) };
       };
-      const tiles = [...document.querySelectorAll('#my-hand .tile')].map(t => t.getBoundingClientRect());
-      const hand = document.querySelector('#my-hand');
-      const handRect = hand ? hand.getBoundingClientRect() : null;
+      const hit = (a, b) => !!a && !!b && !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
+      const tileRects = [...document.querySelectorAll('#my-hand .tile')].map(t => t.getBoundingClientRect());
+      const handRect = (() => { const h = document.querySelector('#my-hand'); return h ? h.getBoundingClientRect() : null; })();
       const ab_ = document.getElementById('action-bar');
-      const abRect = ab_ && !ab_.classList.contains('hidden') ? ab_.getBoundingClientRect() : null;
+      const barRect = ab_ && !ab_.classList.contains('hidden') ? ab_.getBoundingClientRect() : null;
 
-      // 手牌完整可见（每张都落在视口内）
-      const offscreen = tiles.filter(t => t.left < -1 || t.top < -1 || t.right > vw + 1 || t.bottom > vh + 1).length;
+      // 手牌完整可见（每张的屏幕包围盒都在 #app 内）
+      const offscreen = tileRects.filter(b => !IN(b)).length;
       // 手牌与操作栏重叠
-      let overlap = 0;
-      if (handRect && abRect) {
-        overlap = !(handRect.right < abRect.left || handRect.left > abRect.right ||
-                    handRect.bottom < abRect.top || handRect.top > abRect.bottom) ? 1 : 0;
-      }
+      const overlap = hit(handRect, barRect) ? 1 : 0;
       // 四家座位与四块牌河是否都在视口内
-      const seats = ['#seat-1', '#seat-2', '#seat-3', '#me'].map(s => rect(s));
-      const rivers = ['#river-0', '#river-1', '#river-2', '#river-3'].map(s => rect(s));
-      const outOfView = [...seats, ...rivers].filter(b => b && (b.x < -2 || b.y < -2 || b.x + b.w > vw + 2 || b.y + b.h > vh + 2)).length;
+      const seats = ['#seat-1', '#seat-2', '#seat-3', '#me'].map(s => document.querySelector(s));
+      const rivers = ['#river-0', '#river-1', '#river-2', '#river-3'].map(s => document.querySelector(s));
+      const outOfView = [...seats, ...rivers].filter(e => e && !IN(e.getBoundingClientRect())).length;
 
       return {
-        vw, vh, deg,
+        vw, vh, deg, rotated: ROTATED,
         appRect: { x: Math.round(ab.left), y: Math.round(ab.top), w: Math.round(ab.width), h: Math.round(ab.height) },
         // 尺寸互换看 computed style（旋转后的 boundingRect 会绕回原视口尺寸）
         cssW: Math.round(parseFloat(cs.width)),
         cssH: Math.round(parseFloat(cs.height)),
         origin: cs.transformOrigin,
-        appFills: Math.round(parseFloat(cs.width)) === vh && Math.round(parseFloat(cs.height)) === vw,
+        appFills: Math.round(parseFloat(cs.width)) === (ROTATED ? vh : vw) && Math.round(parseFloat(cs.height)) === (ROTATED ? vw : vh),
         coversViewport: ab.left <= 2 && ab.top <= 2 && ab.width >= vw - 3 && ab.height >= vh - 3,
-        handCount: tiles.length,
-        tileW: tiles.length ? Math.round(tiles[0].width) : 0,
-        tileH: tiles.length ? Math.round(tiles[0].height) : 0,
+        handCount: tileRects.length,
+        tileW: tileRects.length ? Math.round(tileRects[0].width) : 0,
+        tileH: tileRects.length ? Math.round(tileRects[0].height) : 0,
         // 屏幕坐标系下的方位：顺时针旋转后顶栏应在右半屏、手牌应在左半屏
         topbarOnRight: (() => { const t = document.getElementById('topbar'); if (!t) return null;
           const b = t.getBoundingClientRect(); return (b.left + b.right) / 2 > vw / 2; })(),
@@ -120,6 +124,9 @@ const CASES = [
       if (!box) return { open: false };
       const b = box.getBoundingClientRect();
       const vw = window.innerWidth, vh = window.innerHeight;
+      // #modal-root 与 #app 同步旋转，故弹窗在屏幕坐标下也转了 90°：
+      // 「完整可见」需用旋转后的外接矩形判定（左/上 ≥ -2、右/下 ≤ 视口+2）；
+      // 「居中」不受旋转影响。
       return {
         open: true,
         w: Math.round(b.width), h: Math.round(b.height),
@@ -135,36 +142,41 @@ const CASES = [
     await sleep(300);
 
     /* 操作栏（轮到自己出牌时出现）：
-       · 竖屏（整屏旋转）下刻意做成「竖直胶囊」：容器竖排 (h > w)，但每个按钮仍横向
-         (w > h) 以保证文字水平可读 —— 这样它能塞进手牌与牌河之间的竖缝，不压铭牌。
-       · 横屏下是普通的水平横排胶囊。
-       两种形态都必须：完整落在视口内、不盖住手牌牌面、不压局势铭牌。 */
+       统一坐标系方案下，竖屏旋转后 #app 内一切都已处在「横屏逻辑视口」中 ——
+       操作栏自然是一条**水平胶囊**（与横屏矮屏完全一致），按钮横向、文字水平。
+       因此竖屏与横屏使用同一组断言：完整落在视口内、不盖住手牌牌面、不压局势铭牌。 */
     const actionBar = await page.evaluate(() => {
       const bar = document.getElementById('action-bar');
       bar.classList.remove('hidden');
       bar.innerHTML = ['吃', '碰', '杠', '胡', '过']
         .map(t => '<button class="act-btn">' + t + '</button>').join('');
+      const app = document.getElementById('app');
+      const m = getComputedStyle(app).transform;
+      let deg = 0;
+      if (m && m !== 'none') {
+        const p = m.match(/matrix\(([^)]+)\)/);
+        if (p) { const [a, b] = p[1].split(',').map(s => parseFloat(s.trim())); deg = Math.round(Math.atan2(b, a) * 180 / Math.PI); }
+      }
+      const ROTATED = Math.abs(deg) > 45;
+      const ab = app.getBoundingClientRect();
       const b = bar.getBoundingClientRect();
-      const vw = window.innerWidth, vh = window.innerHeight;
+      const IN = (r) => r.left >= ab.left - 1 && r.top >= ab.top - 1 && r.right <= ab.right + 1 && r.bottom <= ab.bottom + 1;
+      const hit = (a, c) => !!a && !!c && !(a.right < c.left || a.left > c.right || a.bottom < c.top || a.top > c.bottom);
       // 与「手牌牌面」比对（牌托有内边距，允许压到牌托边缘，但不能盖住牌）
-      const coversTile = [...document.querySelectorAll('#my-hand .tile')].some(t => {
-        const r = t.getBoundingClientRect();
-        return !(r.right < b.left || r.left > b.right || r.bottom < b.top || r.top > b.bottom);
-      });
+      const coversTile = [...document.querySelectorAll('#my-hand .tile')].some(t => hit(t.getBoundingClientRect(), b));
       const plaque = document.getElementById('center-plaque');
-      const pb = plaque ? plaque.getBoundingClientRect() : null;
-      const coversPlaque = pb
-        ? !(b.right < pb.left || b.left > pb.right || b.bottom < pb.top || b.top > pb.bottom)
-        : false;
+      const coversPlaque = plaque ? hit(plaque.getBoundingClientRect(), b) : false;
       const btn = bar.querySelector('.act-btn');
       const bb = btn ? btn.getBoundingClientRect() : null;
       return {
+        rotated: ROTATED,
         visible: true,
-        w: Math.round(b.width), h: Math.round(b.height),
-        vertical: b.height > b.width,                    // 竖屏下应为竖直胶囊
-        horizontal: b.width > b.height,                  // 横屏下应为横排
-        btnHorizontal: bb ? bb.width > bb.height : null, // 按钮横向 = 文字水平可读
-        inViewport: b.left >= -1 && b.top >= -1 && b.right <= vw + 1 && b.bottom <= vh + 1,
+        // 旋转下（顺时针 90°）屏幕包围盒的宽=逻辑高、高=逻辑宽，故判断「横排」需换回
+        w: Math.round(ROTATED ? b.height : b.width),
+        h: Math.round(ROTATED ? b.width : b.height),
+        horizontal: (ROTATED ? b.height : b.width) > (ROTATED ? b.width : b.height),
+        btnHorizontal: bb ? (ROTATED ? bb.height : bb.width) > (ROTATED ? bb.width : bb.height) : null,
+        inViewport: IN(b),
         coversTile, coversPlaque,
       };
     });
@@ -201,14 +213,9 @@ const CASES = [
     }
     console.log('  弹窗          : ' + (modal.open ? (modal.w + '×' + modal.h + ' 完整' + mark(modal.fullyVisible) + ' 居中' + mark(modal.centered)) : '未打开'));
     if (actionBar) {
-      if (isPortrait) {
-        console.log('  操作栏        : ' + actionBar.w + '×' + actionBar.h + ' 竖排' + mark(actionBar.vertical) +
-          ' 按钮横向' + mark(actionBar.btnHorizontal) + ' 在视口内' + mark(actionBar.inViewport) +
-          ' 不盖牌面' + mark(!actionBar.coversTile) + ' 不压铭牌' + mark(!actionBar.coversPlaque));
-      } else {
-        console.log('  操作栏        : ' + actionBar.w + '×' + actionBar.h + ' 横排' + mark(actionBar.horizontal) +
-          ' 在视口内' + mark(actionBar.inViewport) + ' 不盖牌面' + mark(!actionBar.coversTile));
-      }
+      console.log('  操作栏        : ' + actionBar.w + '×' + actionBar.h + ' 横排' + mark(actionBar.horizontal) +
+        ' 按钮横向' + mark(actionBar.btnHorizontal) + ' 在视口内' + mark(actionBar.inViewport) +
+        ' 不盖牌面' + mark(!actionBar.coversTile) + ' 不压铭牌' + mark(!actionBar.coversPlaque));
     }
     console.log('  → ' + (rowOk ? '通过 ✓' : '未通过 ✗'));
     console.log('');

@@ -4,6 +4,19 @@
    ========================================================= */
 
 :root {
+  /* ---------- 统一「横屏逻辑视口」坐标系 ----------
+     牌桌的一切尺寸都基于这两个变量计算。默认等于真实视口；
+     手机竖屏时（下方媒体查询）会把两者**互换**（--vw 取视口高、--vh 取视口宽），
+     配合 #app 整体旋转 90°，使竖屏旋转后的牌桌与「原生横屏矮屏」逐像素等价。
+
+     取值优先级：JS 注入的 --vwpx/--vhpx（= documentElement.clientWidth/Height，
+     移动端最可靠，避开地址栏伸缩）→ dvw/dvh（现代浏览器）→ vw/vh。
+     这样 --vw 恒为「物理长边」，无论设备是竖持还是横持。 */
+  --vwpx: 100vw;
+  --vhpx: 100vh;
+  --vw: var(--vwpx);
+  --vh: var(--vhpx);
+
   /* 配色 */
   --gold: #d8b46c;
   --gold-lt: #f4e0ac;
@@ -19,8 +32,8 @@
   --radius: 14px;
 
   /* 牌宽高自适应：以「14 张手牌 + 13 道 2px 间隙 + 牌托/牌桌内边距 必须铺得进窗口宽度」为约束；
-     同时以窗口高度给出手牌上限，避免矮屏时纵向被挤爆。大屏封顶 64px。 */
-  --tile-w: clamp(22px, min(calc((100vw - 64px) / 14), calc((100vh - 352px) / 1.45)), 70px);
+     同时以窗口高度给出手牌上限，避免矮屏时纵向被挤爆。大屏封顶 70px。 */
+  --tile-w: clamp(22px, min(calc((var(--vw) - 64px) / 14), calc((var(--vh) - 352px) / 1.45)), 70px);
   --tile-h: calc(var(--tile-w) * 1.36);
   --tile-w-sm: clamp(15px, calc(var(--tile-w) * 0.55), 38px);
   --tile-h-sm: calc(var(--tile-w-sm) * 1.36);
@@ -28,7 +41,7 @@
   /* 牌河 (已出过的牌)：取手牌尺寸的 0.66，并按「视口宽 – 两侧座位 – 铭牌」收口。
      桌面从 26px 放宽到 46px，让打过的牌一眼看清牌面。 */
   --rv-gap: 3px;
-  --rv-w: clamp(15px, min(calc((100vw - 150px) / 11), calc(var(--tile-w) * 0.6)), 42px);
+  --rv-w: clamp(15px, min(calc((var(--vw) - 150px) / 11), calc(var(--tile-w) * 0.6)), 42px);
   --rv-h: calc(var(--rv-w) * 1.36);
 
   /* 牌面厚度 (立体感)：用象牙色侧边 + 投影堆出麻将牌的实体感 */
@@ -520,12 +533,14 @@ html, body {
 .river {
   display: flex;
   flex-wrap: wrap;
-  align-content: flex-end;        /* 新牌在下：空间不足时优先保留最新的牌 */
-  align-items: flex-end;
+  align-content: center;          /* 纵向居中：行数不足时不留空档，行数超过时两头发散 */
+  align-items: center;
   justify-content: center;
   gap: var(--rv-gap);
   min-height: 0;
-  overflow: hidden;
+  /* 不裁切：任何一张弃牌都不得被容器边界「腰斩」。
+     溢出时宁可略微压到邻区（由 #rivers 的行列分配保证不越界），也不切牌。 */
+  overflow: visible;
 }
 /* 北/南:10 列 (2 行 = 20 张);西/东:6 列 (3 行 = 18 张) —— 一局弃牌全都能看见 */
 .river-n, .river-s { width: calc(10 * (var(--rv-w) + var(--rv-gap)) - var(--rv-gap)); }
@@ -834,37 +849,70 @@ html, body {
 }
 
 /* 手机竖屏：整屏旋转 90° 呈现横屏牌桌。
-   思路：#app 的宽高互换（宽=视口高、高=视口宽），再绕左上角**顺时针**转 90°，
-   最后沿 x 平移一个视口宽，正好铺满竖屏 —— 视觉上等同「把手机向右横过来」：
-   顶栏落在屏幕右侧、手牌落在左侧。
-   尺寸用 --vwpx / --vhpx（main.js 按可视视口注入），不走 100vw/100vh：
-   移动端 vh 常把地址栏算进去，会让旋转后差几十像素而露边。
-   注意 transform 从右往左应用（先 rotate 后 translate），平移量必须用视口宽。 */
-@media (max-width: 520px) and (orientation: portrait) {
-  #app {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: var(--vhpx, 100vh);
-    height: var(--vwpx, 100vw);
-    transform: translateX(var(--vwpx, 100vw)) rotate(90deg);
-    transform-origin: 0 0;
-  }
-  /* 内层尺寸 = 横屏矮屏那套。旋转后局部坐标系里：
-       局部「宽」≡ 屏幕高（--vhpx，通常是 844）≙ 横屏时的 100vw
-       局部「高」≡ 屏幕宽（--vwpx，通常是 390）≙ 横屏时的 100vh
-     所以下面所有横屏用的 100vw / 100vh 一律换成 var(--vhpx) / var(--vwpx)，
-     这样竖屏旋转后的牌桌与 844×390 横屏视觉完全一致（只是整体转了 90°）。 */
+   ── 统一坐标系（关键）──
+   #app 的宽高互换（宽=视口高、高=视口宽），绕左上角**顺时针**转 90°，再沿 x 平移
+   一个视口宽，正好铺满竖屏 —— 视觉上等同「把手机向右横过来」：顶栏落屏幕右侧、
+   手牌落左侧。
+
+   同时把 :root 的 --vw / --vh **互换**：--vw := 视口高（长边 844）、--vh := 视口宽（390）。
+   于是 #app 内部**所有**子元素（牌桌、手牌、牌河、回合提示、操作栏、浮字、toast、
+   弹窗）都用同一套「横屏逻辑视口」计算尺寸与定位，坐标系完全统一 ——
+   不再有任何元素需要个别反旋来「纠正方向」或「避开压盖」。
+   这就是竖屏旋转后牌桌与 844×390 原生横屏逐像素等价的原因。 */
+@media (orientation: portrait) and (max-width: 900px) {
   :root {
-    --tile-w: clamp(20px, min(calc((var(--vhpx, 100vh) - 64px) / 14), calc((var(--vwpx, 100vw) - 300px) / 1.45)), 48px);
+    /* 逻辑视口互换：长边当宽、短边当高 */
+    --vw: var(--vhpx, 100dvh);
+    --vh: var(--vwpx, 100dvw);
+    /* 牌面尺寸：宽度约束要**同时扣掉**两侧：
+         · 我方面板（#me-panel）～130px、我方副露预留 ～90px
+         · 牌桌左右内边距 ～16px
+       纵向约束扣掉顶栏(30) + 手牌牌托(19) + 中央区最小高(～150) + 底边距。
+       上限也从 48 收到 44，给 14 张手牌留出真正铺得下的余量。 */
+    --tile-w: clamp(18px, min(calc((var(--vw) - 240px) / 14), calc((var(--vh) - 210px) / 1.45)), 44px);
     --rv-gap: 2px;
-    --rv-w: clamp(13px, min(calc((var(--vhpx, 100vh) - 330px) / 16), calc((var(--vwpx, 100vw) - 110px) / 8)), 22px);
+    /* 弃牌尺寸必须让「南北行 2 行牌」塞得进 0.85fr 行高：
+         行高 ≈ (逻辑高 - 顶栏 - 手牌) × 0.85 / 3.55 ≈ 51px
+         2 行需 2·rv-h + gap ≤ 51  ⟹  rv-h ≤ 24.5  ⟹  rv-w ≤ 18 */
+    --rv-w: clamp(11px, min(calc((var(--vw) - 350px) / 16), calc((var(--vh) - 110px) / 8.5)), 18px);
   }
-  #topbar { padding: 3px 10px; }
+  /* #app 铺满视口并顺时针旋转（用 translate(-50%,-50%) + center 原点，与逻辑视口互换等价） */
+  #app {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: var(--vw);
+    height: var(--vh);
+    transform: translate(-50%, -50%) rotate(90deg);
+    transform-origin: center center;
+    overflow: hidden;
+  }
+  /* 弹窗根与 #app 同步旋转：弹窗（#modal-root 的子元素）与牌桌共享同一坐标系，
+     不再需要单独为竖屏写尺寸 hack。 */
+  #modal-root {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: var(--vw);
+    height: var(--vh);
+    transform: translate(-50%, -50%) rotate(90deg);
+    transform-origin: center center;
+    pointer-events: none;
+    z-index: 100;
+  }
+  #modal-root > * { pointer-events: auto; }
+
+  /* ---- 以下是纯「紧凑尺寸」微调，方向/定位完全交给统一坐标系 ---- */
+  #topbar {
+    /* 竖屏顺时针旋转后：逻辑上边 = 屏幕右边、逻辑下边 = 屏幕左边、
+       逻辑左/右边 = 屏幕下/上边。手机浏览器悬浮球常驻屏幕右侧竖边，
+       故给**逻辑上边**留 48px 安全内边距，让 🔊📖🔄 远离屏幕右缘。 */
+    padding: 48px max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+  }
   .brand-mark { font-size: 16px; }
   .round-name { font-size: 12px; padding: 2px 9px; }
   .icon-btn { width: 28px; height: 28px; font-size: 13px; border-radius: 8px; }
-  #table { padding: 3px 8px 4px; gap: 3px; grid-template-columns: minmax(108px, 0.7fr) minmax(0, 3fr) minmax(108px, 0.7fr); }
+  #table { padding: 3px 8px 4px; gap: 3px; grid-template-columns: minmax(96px, 0.62fr) minmax(0, 3fr) minmax(96px, 0.62fr); }
   .seat-top .panel { padding: 4px 8px; gap: 3px; }
   .seat-left .panel, .seat-right .panel { padding: 4px 5px; gap: 3px; }
   .seat-backs.v .tile { margin-top: calc(var(--tile-h-sm) * -0.22); }
@@ -874,8 +922,26 @@ html, body {
   .seat-meta { font-size: 9px; gap: 4px; flex-wrap: nowrap; }
   .seat-left .seat-meta, .seat-right .seat-meta { flex-wrap: nowrap; }
   .badge { font-size: 9px; padding: 1px 4px; letter-spacing: 0; }
-  #me-panel { padding: 3px 12px; gap: 10px; }
-  .hand { padding: 4px 10px 5px; min-height: calc(var(--tile-h) + 11px); }
+  /* ---- 移动端紧凑沿边布局：副露与手牌同行，把纵向空间还给中央牌桌 ---- */
+  /* 对家（#seat-2）：头像 + 暗牌墙 + 副露 单行一字排开，绝不向下堆叠挤压北家牌河 */
+  .seat-top .panel {
+    flex-direction: row; align-items: center; gap: 8px;
+    padding: 3px 10px; max-height: 40px;
+  }
+  .seat-top .panel .melds { flex-wrap: nowrap; }
+  /* 我方底栏：左「个人信息」+ 中「手牌」+ 右「副露」同行 */
+  #me {
+    flex-direction: row; align-items: flex-end; justify-content: center;
+    gap: 6px; padding: 0 4px;
+  }
+  #me-panel { padding: 2px 7px; gap: 4px; flex: 0 0 auto; }
+  #my-melds { flex: 0 0 auto; }
+  /* 手牌牌托：严丝合缝居中包裹，消除首尾空槽 */
+  .hand {
+    width: fit-content; max-width: 100%; margin: 0 auto;
+    justify-content: center; align-items: center;
+    padding: 4px 6px 5px; min-height: calc(var(--tile-h) + 11px);
+  }
   #center { gap: 3px; }
   #rivers {
     gap: 2px;
@@ -886,55 +952,45 @@ html, body {
   .cp-core .cp-wind { font-size: 22px; }
   .cp-core .cp-round { font-size: 11px; letter-spacing: 1px; margin-top: 2px; }
   .cp-core .cp-wall { font-size: 9px; margin-top: 1px; }
-  /* 回合提示（「点击手牌出牌…」）：中央区的一行，整屏旋转后会变竖条压住牌桌。
-     反旋 -90° 恢复水平；再绝对定位到屏幕上方空白带（left 控屏幕 y、top 控屏幕 x），
-     避开中央的操作栏。 */
+  /* 回合提示：统一坐标系下就是中央区的一行，方向天然与牌桌一致 */
   #turn-banner {
-    position: absolute;
-    left: 2%; top: 56%; bottom: auto;
-    transform: translate(-50%, -50%) rotate(-90deg);
-    transform-origin: center center;
-    font-size: 10px; padding: 2px 10px; min-height: 0;
-    max-width: calc(var(--vwpx, 100vw) - 12px);
-    white-space: nowrap;
-    z-index: 22;
+    font-size: 11px; padding: 2px 12px; min-height: 20px;
+    max-width: 90%; overflow: hidden; text-overflow: ellipsis;
   }
-  /* 操作栏：局部 flex column（竖排）+ 反旋 -90°，在屏幕上呈现为一条**竖直胶囊**，
-     按钮文字仍保持水平可读。这样它很窄（~50px），能塞进「手牌」与「中央牌河」之间的
-     竖缝，不必浮在屏幕正中压住局势铭牌。left 控屏幕 y（靠上，避开铭牌带 379..465）、
-     top 控屏幕 x（50% ≈ 紧贴手牌右缘）。 */
+  /* 操作栏：统一坐标系下就是一条水平胶囊，落在手牌右上方黄金触控区。
+     bottom 用「牌托高 + 12」而非「牌面高 + 22」——牌托顶部在牌面之上约 4px，
+     再加 12px 间隙，确保与手牌牌面之间有干净的空白带，绝不压牌。 */
   #action-bar {
-    left: 30%; top: 50%; bottom: auto;
-    animation: none;
-    transform: translate(-50%, -50%) rotate(-90deg);
-    transform-origin: center center;
-    flex-direction: column;
-    padding: 4px 6px; gap: 4px;
-    max-height: calc(var(--vhpx, 100vh) - 24px);
-    z-index: 60;
+    bottom: calc(var(--tile-h) + 26px); right: 12px; left: auto; transform: none;
+    padding: 5px 9px; gap: 6px;
   }
-  #action-bar .act-btn { padding: 5px 9px; font-size: 12px; letter-spacing: 1px; min-width: 44px; }
-  /* 浮字（吃碰杠胡）：横排大字，反旋保持水平 */
+  #action-bar .act-btn { padding: 6px 11px; font-size: 13px; letter-spacing: 1px; min-width: 48px; }
   #action-flash { font-size: 48px; letter-spacing: 4px; }
   #action-flash.k-win { font-size: 58px; }
-  #action-flash {
-    transform: translate(-50%, -50%) rotate(-90deg);
-    transform-origin: center center;
-  }
-  #action-flash.k-win { transform: translate(-50%, -50%) rotate(-90deg); }
-  /* 牌河列数：局部宽（=屏幕高）宽裕，纵向吃紧 —— 与横屏矮屏一致，N/S 收成 6 列、E/W 收成 4 列 */
+  /* 牌河列数：与横屏矮屏一致，N/S 6 列、E/W 4 列 */
   .river-n, .river-s { width: calc(6 * (var(--rv-w) + var(--rv-gap)) - var(--rv-gap)); }
   .river-w, .river-e { width: calc(4 * (var(--rv-w) + var(--rv-gap)) - var(--rv-gap)); }
-  .modal { padding: 14px; }
-  .modal-box { width: min(86vw, 560px); max-height: 92vh; }
+  /* 弹窗在 #modal-root 内，与牌桌共享同一「横屏逻辑视口」坐标系。
+     注意旋转后轴的对应关系：逻辑「宽」（--vw=844，长边）→ 屏幕垂直方向；
+     逻辑「高」（--vh=390，短边）→ 屏幕水平方向。故：
+       · 逻辑宽 ≤ --vw·0.92  ⟹ 屏幕高 ≤ 844·0.92（不超高）
+       · 逻辑高 ≤ --vh·0.92  ⟹ 屏幕宽 ≤ 390·0.92（不超宽）
+     基础规则里的 94vw/92vh 是真实视口单位，在旋转下会算错，故此处必须覆盖。 */
+  .modal {
+    padding: 14px;
+    width: min(calc(var(--vw) * 0.92), 560px);
+    max-height: calc(var(--vh) * 0.92);
+  }
 }
 
-/* 横屏手机 / 矮屏：纵向空间紧张，收紧空白、压缩牌河与牌墙，保证整桌都在视口内 */
-@media (max-height: 520px) and (orientation: landscape) {
+/* 横屏手机 / 矮屏：纵向空间紧张，收紧空白、压缩牌河与牌墙，保证整桌都在视口内
+   （与竖屏旋转共用同一套「横屏逻辑视口」尺寸公式，故两个断点里数值一致） */
+@media (max-height: 540px) and (orientation: landscape) {
   :root {
-    --tile-w: clamp(20px, min(calc((100vw - 64px) / 14), calc((100vh - 300px) / 1.45)), 48px);
-    /* 横向宽裕、纵向吃紧：出牌区按横向给足尺寸，纵向靠加高东西行来容纳 */
-    --rv-w: clamp(13px, min(calc((100vw - 330px) / 16), calc((100vh - 110px) / 8)), 22px);
+    --tile-w: clamp(18px, min(calc((var(--vw) - 240px) / 14), calc((var(--vh) - 210px) / 1.45)), 44px);
+    /* 横向宽裕、纵向吃紧：出牌区按横向给足尺寸，纵向靠加高东西行来容纳。
+       与竖屏旋转共用同一公式，保证两个断点视觉一致。 */
+    --rv-w: clamp(11px, min(calc((var(--vw) - 350px) / 16), calc((var(--vh) - 110px) / 8.5)), 18px);
   }
   #topbar { padding: 3px 10px; }
   .brand-mark { font-size: 16px; }
@@ -951,8 +1007,26 @@ html, body {
   .seat-meta { font-size: 9px; gap: 4px; flex-wrap: nowrap; }
   .seat-left .seat-meta, .seat-right .seat-meta { flex-wrap: nowrap; }
   .badge { font-size: 9px; padding: 1px 4px; letter-spacing: 0; }
-  #me-panel { padding: 3px 12px; gap: 10px; }
-  .hand { padding: 4px 10px 5px; min-height: calc(var(--tile-h) + 11px); }
+  /* ---- 移动端紧凑沿边布局：副露与手牌同行，把纵向空间还给中央牌桌 ---- */
+  /* 对家（#seat-2）：头像 + 暗牌墙 + 副露 单行一字排开，绝不向下堆叠挤压北家牌河 */
+  .seat-top .panel {
+    flex-direction: row; align-items: center; gap: 8px;
+    padding: 3px 10px; max-height: 40px;
+  }
+  .seat-top .panel .melds { flex-wrap: nowrap; }
+  /* 我方底栏：左「个人信息」+ 中「手牌」+ 右「副露」同行 */
+  #me {
+    flex-direction: row; align-items: flex-end; justify-content: center;
+    gap: 6px; padding: 0 4px;
+  }
+  #me-panel { padding: 2px 7px; gap: 4px; flex: 0 0 auto; }
+  #my-melds { flex: 0 0 auto; }
+  /* 手牌牌托：严丝合缝居中包裹，消除首尾空槽 */
+  .hand {
+    width: fit-content; max-width: 100%; margin: 0 auto;
+    justify-content: center; align-items: center;
+    padding: 4px 6px 5px; min-height: calc(var(--tile-h) + 11px);
+  }
   #center { gap: 3px; }
   /* 矮屏把中间行 (东西家的出牌区) 加高，让侧家也能看到最新两三行弃牌 */
   #rivers {
