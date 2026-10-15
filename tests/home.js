@@ -106,7 +106,9 @@ function snap() {
     isFlip: !!(wallEl && wallEl.classList.contains('is-flip')),
     entering: !!(home && home.classList.contains('entering')),
     leaving: !!(home && home.classList.contains('leaving')),
-    hand: document.querySelectorAll('#my-hand .tile').length,
+    hand: (window.__mjTable3d && window.__mjTable3d.is3D && typeof window.__mjTable3d.handCount === 'function')
+      ? window.__mjTable3d.handCount(0)
+      : document.querySelectorAll('#my-hand .tile').length,
     rulesModal: R('.modal-mask'),
     docScrollW: document.documentElement.scrollWidth,
     docScrollH: document.documentElement.scrollHeight,
@@ -117,7 +119,8 @@ function snap() {
   const browser = await puppeteer.launch({
     executablePath: CHROME,
     headless: 'new',
-    args: ['--no-sandbox', '--disable-dev-shm-usage', '--autoplay-policy=no-user-gesture-required', '--mute-audio'],
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--autoplay-policy=no-user-gesture-required', '--mute-audio',
+      '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader'],
   });
 
   const results = [];
@@ -156,7 +159,11 @@ function snap() {
     const midFlip = await page.evaluate(snap);
     await page.screenshot({ path: path.join(OUT, c.name + '-flip.png') });
     /* 等进入牌桌（翻牌 560+330 → 放大 720，约 1.5s，手牌发出需要一些时间） */
-    await page.waitForFunction(() => document.querySelectorAll('#my-hand .tile').length >= 13, { timeout: 25000, polling: 120 });
+    await page.waitForFunction(() => {
+      const d = window.__mjTable3d;
+      if (d && d.is3D) return d.handCount(0) >= 13;   // 3D：手牌由 WebGL 场景渲染，DOM 无牌块
+      return document.querySelectorAll('#my-hand .tile').length >= 13;
+    }, { timeout: 25000, polling: 120 });
     await sleep(600);
     const play = await page.evaluate(snap);
     await page.screenshot({ path: path.join(OUT, c.name + '-play.png') });
@@ -188,7 +195,11 @@ function snap() {
     const beforeClick = await p.evaluate(snap);
     // 先开一局，再返回
     await clickSel(p, '#btn-quick');
-    await p.waitForFunction(() => document.querySelectorAll('#my-hand .tile').length >= 13, { timeout: 25000, polling: 120 });
+    await p.waitForFunction(() => {
+      const d = window.__mjTable3d;
+      if (d && d.is3D) return d.handCount(0) >= 13;
+      return document.querySelectorAll('#my-hand .tile').length >= 13;
+    }, { timeout: 25000, polling: 120 });
     await sleep(500);
     await clickSel(p, '#btn-home');
     await p.waitForSelector('.modal-mask', { timeout: 5000 });

@@ -1478,3 +1478,49 @@ html, body {
   /* 矮屏纵向紧张：操作栏再抬高一点，避免压到手牌牌面 */
   #action-bar { bottom: calc(var(--tile-h) + 26px); }
 }
+
+/* =========================================================
+   三、3D 牌桌模式（#table.t3d —— js/table3d.js 挂载成功后启用）
+   ─────────────────────────────────────────────────────────
+   WebGL 画布铺满 #table 负责桌面与所有麻将牌；DOM 保留 HUD：
+   顶栏 / 四角信息胶囊 / 中央局势铭牌 / 操作栏 / 浮字 / 弹窗。
+   无 WebGL 或 ?ui=dom 时自动回退原平面渲染（本段全部不生效）。
+   ========================================================= */
+#table.t3d { position: relative; }
+#table.t3d #table-felt { display: none; }
+#table.t3d #table-3d {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  display: block;
+  z-index: 0;
+  border-radius: 18px;
+}
+/* 麻将牌的 DOM 全部退场（3D 场景接管） */
+#table.t3d .river,
+#table.t3d #my-hand,
+#table.t3d .seat-backs,
+#table.t3d .melds,
+#table.t3d .side-melds,
+#table.t3d #my-melds { display: none !important; }
+/* HUD 浮层压在 3D 画布之上 */
+#table.t3d #seat-1, #table.t3d #seat-2, #table.t3d #seat-3,
+#table.t3d #me, #table.t3d #center, #table.t3d #action-flash,
+#table.t3d #turn-banner {
+  position: relative;
+  z-index: 2;
+}
+/* 玩家信息胶囊：半透明毛玻璃小卡片，不遮挡牌桌 */
+#table.t3d .panel {
+  background: rgba(11, 17, 42, 0.68);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  border: 1px solid rgba(216, 180, 108, 0.32);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.38);
+  padding: 6px 10px;
+}
+#table.t3d .panel.active {
+  border-color: rgba(255, 205, 120, 0.75);
+  box-shadow: 0 0 18px rgba(255, 190, 90, 0.28);
+}
+/* 中央铭牌浮在罗盘正上方，3D 罗盘只做座风呼吸灯 */
+#table.t3d #center-plaque { z-index: 2; }

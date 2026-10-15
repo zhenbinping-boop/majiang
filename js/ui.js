@@ -52,6 +52,75 @@
       this._tingMap = new Map();  // Map<discardTile, { total, live: { [winTile]: count } }>
       this.$ = (id) => document.getElementById(id);
       this._bindKeyboard();
+      this._mountTable3D();
+    }
+
+    /**
+     * 挂载 Three.js 3D 牌桌（可用时）。
+     * 3D 模式下手牌/牌河/副露/立牌全部在 WebGL 场景渲染，DOM 只留 HUD；
+     * 不可用（无 WebGL / ?ui=dom）时保持原有平面 DOM 渲染，行为不变。
+     * 统一暴露 window.__mjTable3d 调试接口（两条路径同形），供测试驱动。
+     */
+    _mountTable3D() {
+      this.t3d = null;
+      const forceDom = typeof location !== 'undefined' && /[?&]ui=dom/.test(location.search);
+      const table = this.$('table');
+      if (!forceDom && table && global.MJTable3D && global.MJTable3D.isSupported()) {
+        this.t3d = global.MJTable3D.mount(table, MJ, {
+          canPick: () => !!this.handClickResolve,
+        });
+      }
+      if (this.t3d) {
+        table.classList.add('t3d');
+        this.t3d.onPickTile = (idx, tIdx) => this.onHandTileClick(tIdx, null, idx);
+        this.t3d.onHoverTile = (idx, tIdx) => {
+          if (idx === null) {
+            if (this.selectedTile === null) {
+              this.highlightSameTiles(null);
+              this.refreshPassiveTingTip();
+            }
+          } else {
+            this.highlightSameTiles(tIdx);
+            const u = this._tingMap && this._tingMap.get(tIdx);
+            if (u) this.showTingTip(u, `打 ${MJ.tileName(tIdx)} 听`);
+            else this.hideTingTip();
+          }
+        };
+      }
+      const self = this;
+      global.__mjTable3d = {
+        get is3D() { return !!self.t3d; },
+        canvasPresent() { return !!document.getElementById('table-3d'); },
+        clickHandTile(i) {
+          const p = self.engine.players[0];
+          if (!p || i < 0 || i >= p.hand.length) return false;
+          if (self.t3d) return self.t3d.debug().clickHandTile(i);
+          const box = self.$('my-hand');
+          const el = box && box.querySelectorAll('.tile')[i];
+          if (!el) return false;
+          el.click();
+          return true;
+        },
+        hoverHandTile(i) {
+          const p = self.engine.players[0];
+          if (!p || i < 0 || i >= p.hand.length) return false;
+          if (self.t3d) return self.t3d.debug().hoverHandTile(i);
+          const box = self.$('my-hand');
+          const el = box && box.querySelectorAll('.tile')[i];
+          if (!el) return false;
+          el.dispatchEvent(new Event('mouseenter'));
+          return true;
+        },
+        unhover() {
+          if (self.t3d) self.t3d.debug().unhover();
+        },
+        tileMeshCount() { return self.t3d ? self.t3d.debug().tileMeshCount() : -1; },
+        handCount(pid) { return self.engine.players[pid].hand.length; },
+        riverCount(pid) { return self.engine.players[pid].discards.length; },
+        meldCount(pid) { return self.engine.players[pid].melds.length; },
+        /** 3D 出牌飞行中尚未落桌的数量（DOM 模式恒 0）；测试用它等待动画收敛 */
+        pendingCount() { return self.t3d ? (self.t3d.debug().pendingCount ? self.t3d.debug().pendingCount() : 0) : 0; },
+      };
     }
 
     /** 绑定键盘快捷操作：左右方向键选牌、Enter/Space 出牌、Esc 关闭规则弹窗 */
@@ -71,7 +140,8 @@
         const p = this.engine.players[0];
         if (!p || !p.hand.length) return;
         const box = this.$('my-hand');
-        const els = box && box.querySelectorAll ? [...box.querySelectorAll('.tile')] : [];
+        let els = box && box.querySelectorAll ? [...box.querySelectorAll('.tile')] : [];
+        if (!els.length && this.t3d) els = p.hand;   // 3D 模式：虚拟列表驱动键盘选牌
         if (!els.length) return;
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
           e.preventDefault();
@@ -94,6 +164,7 @@
       this.actionResolve = null;
       this.selectedTile = null;
       this.selectedIdx = -1;
+      if (this.t3d) { this.t3d.setSelected(-1); this.t3d.setHover(-1); }
       this.highlightSameTiles(null);
       this.hideTingTip();
     }
@@ -138,6 +209,7 @@
 
     /** 高亮牌河与副露中与指定牌相同的牌面 */
     highlightSameTiles(tileIdx) {
+      if (this.t3d) { this.t3d.highlightSame(tileIdx === null || tileIdx === undefined ? null : tileIdx); return; }
       const table = this.$('table');
       if (!table || !table.querySelectorAll) return;
       const all = table.querySelectorAll('.tile');
@@ -251,9 +323,13 @@
     renderMySeat() {
       const p = this.engine.players[0];
       this.$('me-info').innerHTML = this.seatInfoHTML(p);
-      const meldsBox = this.$('my-melds');
-      meldsBox.innerHTML = '';
-      p.melds.forEach(m => meldsBox.appendChild(this.meldEl(m, true)));
+      if (this.t3d) {
+        this.t3d.syncMelds(0, p.melds);
+      } else {
+        const meldsBox = this.$('my-melds');
+        meldsBox.innerHTML = '';
+        p.melds.forEach(m => meldsBox.appendChild(this.meldEl(m, true)));
+      }
       this.renderMyHand();
     }
 
@@ -265,9 +341,25 @@
      */
     renderMyHand(opts = {}) {
       const p = this.engine.players[0];
+      this._tingMap = this.computeMyTingMap();
+      if (this.t3d) {
+        let freshIdx = -1;
+        if (this.freshTile !== null && this.freshTile !== undefined) {
+          for (let i = p.hand.length - 1; i >= 0; i--) if (p.hand[i] === this.freshTile) { freshIdx = i; break; }
+        }
+        this.t3d.syncHand(0, p.hand, {
+          animate: !!opts.animate,
+          freshIdx,
+        });
+        this.selectedTile = null;
+        this.selectedIdx = -1;
+        this.t3d.setSelected(-1);
+        this.highlightSameTiles(null);
+        this.refreshPassiveTingTip();
+        return;
+      }
       const box = this.$('my-hand');
       box.innerHTML = '';
-      this._tingMap = this.computeMyTingMap();
       let freshIdx = -1;
       if (this.freshTile !== null && this.freshTile !== undefined) {
         for (let i = p.hand.length - 1; i >= 0; i--) if (p.hand[i] === this.freshTile) { freshIdx = i; break; }
@@ -316,6 +408,17 @@
       const info = this.el('div');
       info.innerHTML = this.seatInfoHTML(p);
 
+      panel.appendChild(info);
+
+      if (this.t3d) {
+        // 3D 模式：立牌与副露在 WebGL 场景渲染，DOM 面板只留信息胶囊
+        this.t3d.syncHand(pid, p.hand);
+        this.t3d.syncMelds(pid, p.melds);
+        box.innerHTML = '';
+        box.appendChild(panel);
+        return;
+      }
+
       // 牌墙：对家横排、左右家竖排 (牌背横置，模拟桌沿视角)
       const backs = this.el('div', 'seat-backs ' + (isTop ? 'h' : 'v'));
       for (let i = 0; i < p.hand.length; i++) backs.appendChild(this.tileEl(0, { back: true, orient: isTop ? '' : 'side' }));
@@ -324,7 +427,6 @@
       const melds = this.el('div', isTop ? 'melds' : 'side-melds');
       p.melds.forEach(m => melds.appendChild(this.meldEl(m, true)));
 
-      panel.appendChild(info);
       panel.appendChild(backs);
       if (p.melds.length) panel.appendChild(melds);
 
@@ -340,6 +442,13 @@
       const seen = this._riverSeen || (this._riverSeen = [0, 0, 0, 0]);
       const cursorPid = (this.engine.lastDiscarder !== null && this.engine.lastDiscarder >= 0)
         ? this.engine.lastDiscarder : -1;
+
+      if (this.t3d) {
+        const discards = [0, 1, 2, 3].map((pid) => this.engine.players[pid].discards);
+        this.t3d.syncRivers(discards, cursorPid, { animateNew: opts.animate !== false });
+        for (let pid = 0; pid < 4; pid++) seen[pid] = discards[pid].length;
+        return;
+      }
 
       for (let pid = 0; pid < 4; pid++) {
         const box = this.$('river-' + pid);
@@ -366,6 +475,7 @@
         const m = this.$('cpm-' + i);
         if (m) m.classList.toggle('hot', i === pid);
       }
+      if (this.t3d) this.t3d.setTurn(pid);
       const s = SEAT_INFO[pid];
       this.$('turn-banner').textContent = pid === 0 ? '轮到你出牌' : `轮到 ${s.name} 出牌`;
     }
@@ -388,6 +498,7 @@
       this.freshTile = null;
       this.riverCount = 0;
       this._riverSeen = [0, 0, 0, 0];
+      if (this.t3d) this.t3d.resetForDeal();
       this.renderAll();
       this.renderRivers({ animate: false });
       this.renderMyHand({ animate: true });
@@ -404,14 +515,26 @@
       } else {
         this.renderAISeat(pid);
       }
+      if (this.t3d) this.t3d.playDraw(pid);
       this.sound.clack();
       await delay(200);
     }
 
     animateDiscard(pid, tile) {
       if (pid === 0) this.freshTile = null;
-      this.renderRivers();
       this.renderTopbar();
+      if (this.t3d) {
+        // 3D：牌河最后一张暂扣，由 3D 手部拍落后揭示 + 冲击波
+        if (pid === 0) this.renderMySeat(); else this.renderAISeat(pid);
+        const discards = [0, 1, 2, 3].map((p) => this.engine.players[p].discards);
+        const cursorPid = (this.engine.lastDiscarder !== null && this.engine.lastDiscarder >= 0)
+          ? this.engine.lastDiscarder : -1;
+        this.t3d.syncRivers(discards, cursorPid, { pendingPid: pid });
+        this.t3d.playDiscard(pid, discards, cursorPid);
+        this.sound.clack();
+        return;
+      }
+      this.renderRivers();
       if (pid === 0) this.renderMySeat();
       else this.renderAISeat(pid);
       this.sound.clack();
@@ -425,6 +548,7 @@
       else this.sound.kong();
       this.flash(text, kind);
       if (pid === 0) this.renderMySeat(); else this.renderAISeat(pid);
+      if (this.t3d) this.t3d.playClaim(pid);
       await delay(430);
     }
 
@@ -437,6 +561,7 @@
       if (el) el.classList.add('selected');
       this.selectedTile = t;
       this.selectedIdx = idx;
+      if (this.t3d) this.t3d.setSelected(idx);
       this.highlightSameTiles(t);
       if (this._tingMap && this._tingMap.has(t)) {
         this.showTingTip(this._tingMap.get(t), `打 ${MJ.tileName(t)} 听`);

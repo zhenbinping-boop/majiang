@@ -44,7 +44,10 @@ async function enterTable(page) {
       const app = document.getElementById('app');
       const homeAway = !home || home.classList.contains('hidden');
       const appUp = app && !app.classList.contains('hidden');
-      const hand = document.querySelectorAll('#hand .tile, #my-hand .tile, .hand .tile').length;
+      const d3 = window.__mjTable3d;
+      const hand = d3 && d3.is3D
+        ? (typeof d3.handCount === 'function' ? d3.handCount(0) : 0)
+        : document.querySelectorAll('#hand .tile, #my-hand .tile, .hand .tile').length;
       return homeAway && appUp && hand > 0;
     },
     { timeout: 15000, polling: 80 }
@@ -63,7 +66,11 @@ const CASES = [
   const browser = await puppeteer.launch({
     executablePath: CHROME,
     headless: 'new',
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    args: [
+      '--no-sandbox', '--disable-dev-shm-usage',
+      // 无 GPU 的 headless 环境下启用 SwiftShader 软渲染，让 WebGL 3D 牌桌可挂载
+      '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader',
+    ],
   });
   const page = await browser.newPage();
   const errors = [];
@@ -128,8 +135,12 @@ const CASES = [
       const rivers = ['#river-0', '#river-1', '#river-2', '#river-3'].map(s => document.querySelector(s));
       const outOfView = [...seats, ...rivers].filter(e => e && !IN(e.getBoundingClientRect())).length;
 
+      const d3 = window.__mjTable3d;
+      const IS3D = !!(d3 && d3.is3D);
+      const hand3d = IS3D && typeof d3.handCount === 'function' ? d3.handCount(0) : null;
+
       return {
-        vw, vh, deg, rotated: ROTATED,
+        vw, vh, deg, rotated: ROTATED, is3D: IS3D,
         appRect: { x: Math.round(ab.left), y: Math.round(ab.top), w: Math.round(ab.width), h: Math.round(ab.height) },
         // 尺寸互换看 computed style（旋转后的 boundingRect 会绕回原视口尺寸）
         cssW: Math.round(parseFloat(cs.width)),
@@ -137,7 +148,7 @@ const CASES = [
         origin: cs.transformOrigin,
         appFills: Math.round(parseFloat(cs.width)) === (ROTATED ? vh : vw) && Math.round(parseFloat(cs.height)) === (ROTATED ? vw : vh),
         coversViewport: ab.left <= 2 && ab.top <= 2 && ab.width >= vw - 3 && ab.height >= vh - 3,
-        handCount: tileRects.length,
+        handCount: hand3d != null ? hand3d : tileRects.length,
         tileW: tileRects.length ? Math.round(tileRects[0].width) : 0,
         tileH: tileRects.length ? Math.round(tileRects[0].height) : 0,
         // 屏幕坐标系下的方位：顺时针旋转后顶栏应在右半屏、手牌应在左半屏
@@ -237,7 +248,7 @@ const CASES = [
     } else {
       console.log('  旋转角        : ' + r.deg + '°  ' + mark(r.deg === 0) + ' (横屏不旋转)');
     }
-    console.log('  手牌          : ' + r.handCount + ' 张 ' + r.tileW + '×' + r.tileH);
+    console.log('  手牌          : ' + r.handCount + ' 张 ' + (r.is3D ? '(3D 立牌)' : r.tileW + '×' + r.tileH) + '  ' + mark(r.handCount >= 13));
     console.log('  手牌越界      : ' + r.offscreen + '  ' + mark(r.offscreen === 0));
     console.log('  手牌压操作栏  : ' + r.overlap + '  ' + mark(r.overlap === 0));
     console.log('  座位/牌河越界 : ' + r.outOfView + '  ' + mark(r.outOfView === 0));

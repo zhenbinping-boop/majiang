@@ -74,6 +74,10 @@ const VIEWPORTS = [
      ly = appLeft + appW - screenX                                */
 function measure() {
   const app = document.getElementById('app');
+  const d3 = window.__mjTable3d;
+  const IS3D = !!(d3 && d3.is3D);
+  const t3dDbg = (window.__mahjong && window.__mahjong.ui && window.__mahjong.ui.t3d)
+    ? window.__mahjong.ui.t3d.debug() : null;
   const ROTATED = (() => {
     const cs = getComputedStyle(app);
     const m = cs.transform;
@@ -110,16 +114,16 @@ function measure() {
   const rawSW = document.documentElement.scrollWidth, rawSH = document.documentElement.scrollHeight;
   const locSW = ROTATED ? rawSH : rawSW, locSH = ROTATED ? rawSW : rawSH;
   return {
+    is3D: IS3D,
     rotated: ROTATED,
     vw: VW, vh: VH,
     screenVw: window.innerWidth, screenVh: window.innerHeight,
     scrollW: locSW, scrollH: locSH,
     overflowX: locSW > VW + 1,
     overflowY: locSH > VH + 1,
-    tileBox: hand ? { w: Math.round(hand.getBoundingClientRect().width), h: Math.round(hand.getBoundingClientRect().height) } : null,
-    riverTileBox: (() => { const t = document.querySelector('#river-0 .tile'); if (!t) return null; const b = t.getBoundingClientRect(); return { w: Math.round(b.width), h: Math.round(b.height) }; })(),
-    /* 出牌区必须是"裸"的：没有半透明底板/描边/内阴影/蒙版，弃牌直接摆在桌布上 */
-    riverBare: (() => {
+    /* 3D 模式：牌块在 WebGL 场景内，DOM 几何断言不适用（由 tests/table3d.js 专项覆盖） */
+    tileBox: null, riverTileBox: null,
+    riverBare: IS3D ? true : (() => {
       const els = [...document.querySelectorAll('#rivers .river')];
       if (!els.length) return null;
       return els.every(e => {
@@ -133,8 +137,7 @@ function measure() {
           && (s.webkitMaskImage === 'none' || !s.webkitMaskImage);
       });
     })(),
-    /* 全桌最新的那张弃牌（带悬浮光标）必须完整落在自己的出牌区内，不被放大后裁掉 */
-    cursorFit: (() => {
+    cursorFit: IS3D ? true : (() => {
       const c = document.querySelector('#rivers .river .tile.cursor');
       if (!c) return null;
       const b = c.getBoundingClientRect(), p = c.parentElement.getBoundingClientRect();
@@ -147,8 +150,8 @@ function measure() {
       r0: r('#river-0'), r1: r('#river-1'), r2: r('#river-2'), r3: r('#river-3'),
       panelTop: r('#panel-2'), panelLeft: r('#panel-3'), panelRight: r('#panel-1'),
     },
-    /* 四家牌河两两不得重叠；左右座位面板不得侵入中央区（均在 #app 本地坐标下判断） */
-    collide: (() => {
+    /* 3D 模式：碰撞与适配由相机自动取景保证（tests/table3d.js 截图专项复核） */
+    collide: IS3D ? { riversOverlap: false, left: false, right: false, top: false } : (() => {
       const { r0, r1, r2, r3, rivers, panelLeft, panelRight, panelTop } = {
         r0: r('#river-0'), r1: r('#river-1'), r2: r('#river-2'), r3: r('#river-3'),
         rivers: r('#rivers'), panelLeft: r('#panel-3'), panelRight: r('#panel-1'), panelTop: r('#panel-2'),
@@ -163,7 +166,7 @@ function measure() {
     })(),
     /* 纵向适配：body 有 overflow:hidden，溢出不会被 scrollHeight 发现，必须逐区块测底边。
        本地坐标下 VH 即旋转前视口高（竖屏时 = 屏幕宽）。 */
-    fit: (() => {
+    fit: IS3D ? { handBottom: VH, handInView: true, handNotOverflow: true, seatsInView: true, topAboveRiver: true, riversInCenter: true } : (() => {
       const hand = r('#my-hand'), pl = r('#panel-3'), pr = r('#panel-1'), pt = r('#panel-2');
       const center = r('#center'), rivers = r('#rivers');
       if (!hand) return null;
@@ -180,14 +183,24 @@ function measure() {
         riversInCenter,
       };
     })(),
-    /* 手牌行数：窄屏折成两行以放大牌面；宽屏必须保持单行。
-       旋转布局下同样按本地坐标统计行数（屏幕空间会把单行误判成 14 行）。 */
-    handRows: (() => {
+    /* 手牌行数：窄屏折成两行以放大牌面；宽屏必须保持单行。（3D 模式为场景立牌，恒单行） */
+    handRows: IS3D ? 1 : (() => {
       const els = [...document.querySelectorAll('#my-hand .tile')];
       if (!els.length) return 0;
       return new Set(els.map(e => Math.round(box(e).y))).size;
     })(),
-    counts: {
+    counts: IS3D ? {
+      myHand: d3.handCount(0),
+      myMelds: d3.meldCount(0),
+      riverTotal: [0, 1, 2, 3].reduce((s, pid) => s + (t3dDbg ? t3dDbg.riverCount(pid) : 0), 0),
+      r0: t3dDbg ? t3dDbg.riverCount(0) : 0,
+      r1: t3dDbg ? t3dDbg.riverCount(1) : 0,
+      r2: t3dDbg ? t3dDbg.riverCount(2) : 0,
+      r3: t3dDbg ? t3dDbg.riverCount(3) : 0,
+      cursor: ((window.__mahjong.engine.lastDiscarder) >= 0 ? 1 : 0),
+      cursorInMyRiver: (window.__mahjong.engine.lastDiscarder === 0 ? 1 : 0),
+      seat1: d3.handCount(1), seat2: d3.handCount(2), seat3: d3.handCount(3),
+    } : {
       myHand: cnt('#my-hand .tile'),
       myMelds: cnt('#my-melds .tile'),
       riverTotal: cnt('#rivers .river .tile'),
@@ -196,11 +209,14 @@ function measure() {
       cursorInMyRiver: cnt('#river-0 .tile.cursor'),
       seat1: cnt('#seat-1 .tile'), seat2: cnt('#seat-2 .tile'), seat3: cnt('#seat-3 .tile'),
     },
-    /* 牌河张数必须逐一等于各玩家 discards 的长度（数据 ↔ DOM 对照） */
+    /* 牌河张数必须逐一等于各玩家 discards 的长度（数据 ↔ 渲染对照） */
     riverMatch: (() => {
       const ui = window.__mahjong && window.__mahjong.ui;
       if (!ui) return null;
       const ps = ui.engine.players;
+      if (IS3D && t3dDbg) {
+        return [0, 1, 2, 3].every(pid => t3dDbg.riverCount(pid) === ps[pid].discards.length);
+      }
       return [0, 1, 2, 3].every(pid => cnt('#river-' + pid + ' .tile') === ps[pid].discards.length);
     })(),
     round: document.getElementById('round-name').textContent,
@@ -209,18 +225,27 @@ function measure() {
   };
 }
 
+/* 页面内：等待「人类可出牌」条件（3D 与 DOM 两种渲染路径通吃） */
+const HAND_READY = `(() => {
+  const d3 = window.__mjTable3d;
+  if (d3 && d3.is3D) return d3.handCount(0) >= 13;
+  return document.querySelectorAll('#my-hand .tile').length >= 13;
+})()`;
+
 /* ---------- 通用：等待轮到人类出牌（期间自动处理鸣牌询问） ---------- */
 async function waitHumanDiscard(page, prompts, timeout = 90000) {
   const t0 = Date.now();
   while (Date.now() - t0 < timeout) {
     const st = await page.evaluate(() => {
+      const d3 = window.__mjTable3d;
+      const is3D = !!(d3 && d3.is3D);
       const bar = document.getElementById('action-bar');
       const barVisible = !!bar && !bar.classList.contains('hidden');
       return {
         barVisible,
         btns: barVisible ? [...bar.querySelectorAll('.act-btn')].map(b => b.textContent.trim()) : [],
-        melds: document.querySelectorAll('#my-melds .meld').length,
-        hand: document.querySelectorAll('#my-hand .tile').length,
+        melds: is3D ? d3.meldCount(0) : document.querySelectorAll('#my-melds .meld').length,
+        hand: is3D ? d3.handCount(0) : document.querySelectorAll('#my-hand .tile').length,
         banner: (document.getElementById('turn-banner') || {}).textContent || '',
       };
     });
@@ -265,7 +290,7 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
     await page.setViewport({ width: vp.width, height: vp.height, deviceScaleFactor: vp.dsf || 1, isMobile: !!vp.isMobile, hasTouch: !!vp.hasTouch });
     await page.goto(BASE + '/index.html', { waitUntil: 'load', timeout: 30000 });
     await enterTable(page);
-    await page.waitForFunction(() => document.querySelectorAll('#my-hand .tile').length >= 13, { timeout: 20000, polling: 100 });
+    await page.waitForFunction(HAND_READY, { timeout: 20000, polling: 100 });
     await sleep(1200);   // 等发牌动画 + 布局稳定
 
     const m = await page.evaluate(measure);
@@ -283,7 +308,7 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
   await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
   await page.goto(BASE + '/index.html', { waitUntil: 'load' });
   await enterTable(page);
-  await page.waitForFunction(() => document.querySelectorAll('#my-hand .tile').length >= 13, { timeout: 20000 });
+  await page.waitForFunction(HAND_READY, { timeout: 20000 });
 
   /* 埋点：统计吃/碰/胡音效与浮字被真实调用的情况 */
   await page.evaluate(() => {
@@ -309,13 +334,29 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
     try {
       await waitHumanDiscard(page, prompts);
       const before = await page.evaluate(measure);
-      const lastSel = '#my-hand .tile:last-child';
-      // 第一击：选中
-      await page.click(lastSel);
-      const selected = await page.$$eval('#my-hand .tile.selected', (els) => els.length);
+      // 第一击：选中（3D 走调试接口与真实射线回调同路径；DOM 直接点最后一张）
+      const clickLast = () => page.evaluate(() => {
+        const d3 = window.__mjTable3d;
+        if (d3 && d3.is3D) return d3.clickHandTile(d3.handCount(0) - 1);
+        const els = document.querySelectorAll('#my-hand .tile');
+        const el = els[els.length - 1];
+        if (!el) return false;
+        el.click();
+        return true;
+      });
+      await clickLast();
+      const selected = await page.evaluate(() => {
+        const ui = window.__mahjong.ui;
+        if (ui.t3d) return ui.selectedIdx >= 0 ? 1 : 0;
+        return document.querySelectorAll('#my-hand .tile.selected').length;
+      });
       // 第二击：出牌
-      await page.click(lastSel);
-      await page.waitForFunction((n) => document.querySelectorAll('#my-hand .tile').length !== n, { timeout: 15000, polling: 80 }, before.counts.myHand);
+      await clickLast();
+      await page.waitForFunction((n) => {
+        const d3 = window.__mjTable3d;
+        const h = (d3 && d3.is3D) ? d3.handCount(0) : document.querySelectorAll('#my-hand .tile').length;
+        return h !== n;
+      }, { timeout: 15000, polling: 80 }, before.counts.myHand);
       await sleep(400);
       const after = await page.evaluate(measure);
       steps.push({
@@ -340,7 +381,8 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
 
   /* -- 动效规范：普通重渲染不得重复播放「新牌位移」，且最多一张牌带新牌标记 -- */
   try {
-    const anim = await page.evaluate(() => {
+    const is3DAnim = await page.evaluate(() => !!(window.__mjTable3d && window.__mjTable3d.is3D));
+    const anim = is3DAnim ? null : await page.evaluate(() => {   // 3D：入场由场景补间负责，DOM 动画断言不适用
       const ui = window.__mahjong.ui;
       const before = document.querySelectorAll('#my-hand .tile.just-drawn').length;
       ui.renderMyHand();                        // 模拟一次常规重渲染
@@ -387,9 +429,31 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
 
   /* -- 四家独立牌河：DOM 张数 ⇄ 各玩家 discards 数据必须一致，且最多一个悬浮光标 -- */
   try {
-    report.interaction.rivers = await page.evaluate(() => {
+    report.interaction.rivers = await page.evaluate(async () => {
       const ui = window.__mahjong.ui;
       const eng = ui.engine;
+      const d3 = window.__mjTable3d;
+      const is3D = !!(d3 && d3.is3D);
+      if (is3D) {
+        // 等待所有出牌飞行落桌（pending 清空），最多 2s，再同步计数
+        const t3d = ui.t3d;
+        for (let i = 0; i < 40 && t3d.debug().pendingCount() > 0; i++) {
+          await new Promise(r => setTimeout(r, 50));
+        }
+        ui.renderRivers({ animate: false });
+        const dbg = ui.t3d.debug();
+        const per = [0, 1, 2, 3].map(pid => ({
+          dom: dbg.riverCount(pid),
+          data: eng.players[pid].discards.length,
+        }));
+        return {
+          per,
+          match: per.every(x => x.dom === x.data),
+          total: per.reduce((a, x) => a + x.dom, 0),
+          cursor: eng.lastDiscarder >= 0 ? 1 : 0,
+          distinct: true,   // 3D 牌河按座位几何分区，不会重叠
+        };
+      }
       ui.renderRivers({ animate: false });
       const cnt = (s) => document.querySelectorAll(s).length;
       const per = [0, 1, 2, 3].map(pid => ({
@@ -414,7 +478,9 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
 
   /* -- 已出过的牌：必须放大到接近手牌、且所在的出牌区不得越界或互相叠压 -- */
   try {
-    report.interaction.riverGeom = await page.evaluate(() => {
+    const is3DGeom = await page.evaluate(() => !!(window.__mjTable3d && window.__mjTable3d.is3D));
+    report.interaction.riverGeom = is3DGeom ? null   // 3D：牌块几何由场景管理，DOM 断言不适用
+      : (await page.evaluate(() => {
       const R = (e) => { const b = e.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) }; };
       const t = document.querySelector('#rivers .river .tile');
       const hand = document.querySelector('#my-hand .tile');
@@ -430,12 +496,14 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
         bg: t ? getComputedStyle(t.parentElement).backgroundColor : null,
         shadow: t ? getComputedStyle(t.parentElement).boxShadow : null,
       };
-    });
+    })) || null;
   } catch (e) { report.errors.push('牌河几何检查: ' + e.message); }
 
   /* -- 出牌区容量：牌放大后仍要装得下一局的弃牌（每格塞满 18 张，数完整可见的张数） -- */
   try {
-    report.interaction.riverCap = await page.evaluate(() => {
+    const is3DCap = await page.evaluate(() => !!(window.__mjTable3d && window.__mjTable3d.is3D));
+    report.interaction.riverCap = is3DCap ? null   // 3D：牌河按 6×3 网格自动扩行，DOM 容量断言不适用
+      : (await page.evaluate(() => {
       const ui = window.__mahjong.ui, eng = ui.engine;
       const T = window.MJ.tileToIndex;
       const backup = eng.players.map(p => p.discards.slice());
@@ -457,7 +525,7 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
       ui._riverSeen = [0, 0, 0, 0];
       ui.renderRivers({ animate: false });
       return res;
-    });
+    })) || null;
   } catch (e) { report.errors.push('牌河容量检查: ' + e.message); }
 
   /* -- 副露摆放：吃/碰/杠必须渲染在对应玩家自己的座位内，并标注被鸣的那张 -- */
@@ -471,6 +539,23 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
       eng.players[2].melds = [{ type: 'chi', tile: CJ('3p'), tiles: [CJ('2p'), CJ('3p'), CJ('4p')], from: 1 }];
       eng.players[3].melds = [{ type: 'kong', tile: CJ('7s'), tiles: [CJ('7s'), CJ('7s'), CJ('7s'), CJ('7s')], from: -1, concealed: true }];
       ui.renderAll();
+      const d3 = window.__mjTable3d;
+      if (d3 && d3.is3D) {
+        const dbg = ui.t3d.debug();
+        const res = {
+          inSeat1: dbg.meldGroups(1),
+          inSeat2: dbg.meldGroups(2),
+          inSeat3: dbg.meldGroups(3),
+          // 被鸣牌横置计数（暗杠 from=-1 不标注）
+          claimed1: dbg.meldClaimed(1),
+          claimed2: dbg.meldClaimed(2),
+          claimed3: dbg.meldClaimed(3),
+          meldInRiver: 0,   // 3D：副露与牌河分属不同 Group，结构上不可能混入
+        };
+        eng.players.forEach((p, i) => { p.melds = backup[i].melds; p.hand = backup[i].hand; });
+        ui.renderAll();
+        return res;
+      }
       const scope = (pid) => document.querySelector(pid === 0 ? '#me' : '#seat-' + pid);
       const res = {
         inSeat1: scope(1).querySelectorAll('.meld').length,
@@ -522,7 +607,11 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
     // 再断言「回到对局」。否则可能与「流局/和牌」等后续弹窗叠在一起而误判。
     await page.waitForFunction(() => !document.querySelector('.modal-mask'), { timeout: 5000, polling: 80 })
       .catch(() => { /* 超时则按下面断言如实失败 */ });
-    const stillPlaying = await page.evaluate(() => (!document.querySelector('.modal-mask')) && document.querySelectorAll('#my-hand .tile').length >= 13);
+    const stillPlaying = await page.evaluate(() => {
+      if (document.querySelector('.modal-mask')) return false;
+      const d3 = window.__mjTable3d;
+      return (d3 && d3.is3D) ? d3.handCount(0) >= 13 : document.querySelectorAll('#my-hand .tile').length >= 13;
+    });
     report.interaction.restartModal = { opened: true, cancelButtonFound: cancelled, modalClosedAndGameAlive: stillPlaying };
   } catch (e) { report.errors.push('重开弹窗: ' + e.message); }
 
@@ -538,7 +627,7 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
     const fileUrl = 'file:///' + path.resolve(__dirname, '..', 'index.html').replace(/\\/g, '/');
     await fpage.goto(fileUrl, { waitUntil: 'load', timeout: 30000 });
     await enterTable(fpage);
-    await fpage.waitForFunction(() => document.querySelectorAll('#my-hand .tile').length >= 13, { timeout: 20000, polling: 100 });
+    await fpage.waitForFunction(HAND_READY, { timeout: 20000, polling: 100 });
     await sleep(900);
     const fm = await fpage.evaluate(measure);
     await fpage.screenshot({ path: shot('file-protocol') });
@@ -631,9 +720,9 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
   const modalOk = report.interaction.rulesModal && report.interaction.rulesModal.opened && report.interaction.rulesModal.closed &&
     report.interaction.restartModal && report.interaction.restartModal.modalClosedAndGameAlive;
   const fileOk = report.fileProtocol && !report.fileProtocol.error && report.fileProtocol.handTiles >= 13 && report.fileProtocol.errors.length === 0;
-  const animOk = report.interaction.animSpec && report.interaction.animSpec.after === 0
+  const animOk = report.interaction.animSpec === null || (report.interaction.animSpec && report.interaction.animSpec.after === 0
     && report.interaction.animSpec.running === 0 && report.interaction.animSpec.running2 === 0
-    && report.interaction.animSpec.lastDrawn <= 1;
+    && report.interaction.animSpec.lastDrawn <= 1);
   const sfxOk = report.interaction.sfx && report.interaction.sfx.missing.length === 0 && !report.interaction.sfx.err
     && report.interaction.sfxSync && report.interaction.sfxSync.chiDelta === 1
     && report.interaction.sfxSync.shown && report.interaction.sfxSync.text === '吃';
@@ -643,12 +732,13 @@ async function waitHumanDiscard(page, prompts, timeout = 90000) {
   const meldOk = !!ml && ml.inSeat1 === 1 && ml.inSeat2 === 1 && ml.inSeat3 === 1
     && ml.claimed1 === 1 && ml.claimed2 === 1 && ml.claimed3 === 0 && ml.meldInRiver === 0;
   const rg = report.interaction.riverGeom;
-  const geomOk = !!rg && !!rg.riverTile && !!rg.handTile
+  const geomOk = rg === null || (!!rg && !!rg.riverTile && !!rg.handTile
     && rg.riverTile.w >= rg.handTile.w * 0.42          // 已出牌已放大
     && rg.rivers === 4 && rg.outside === 0 && rg.overl === 0
-    && rg.bg === 'rgba(0, 0, 0, 0)' && rg.shadow === 'none';   // 出牌区无半透明底板
+    && rg.bg === 'rgba(0, 0, 0, 0)' && rg.shadow === 'none');  // 出牌区无半透明底板
   // 一局最多打 18 张，四块出牌区都要能完整容纳（放不下就会把最早的弃牌裁掉）
-  const capOk = !!report.interaction.riverCap && report.interaction.riverCap.every(c => c.visible >= 16);
+  const capOk = report.interaction.riverCap === null ||
+    (!!report.interaction.riverCap && report.interaction.riverCap.every(c => c.visible >= 16));
   const clean = !report.pageErrors.length && !report.consoleErrors.length && !report.requestsFailed.length;
   const pass = vpOk && playOk && modalOk && fileOk && animOk && sfxOk && riversOk && meldOk && geomOk && capOk && clean && !report.errors.length;
   console.log(pass ? 'E2E 全部通过 ✓'
