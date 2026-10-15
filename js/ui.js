@@ -870,7 +870,9 @@
         const node = document.createDocumentFragment();
         node.appendChild(this.el('h2', '', '总 结 算'));
         node.appendChild(this.el('div', 'subtitle', '东一局 ~ 南四局 · 全场结束'));
+        let playerRank = 0;
         players.forEach((p, i) => {
+          if (p.id === 0) playerRank = i + 1;
           const row = this.el('div', 'rank-row');
           const medal = ['🥇', '🥈', '🥉', ''][i];
           row.innerHTML = `
@@ -880,6 +882,20 @@
             <span class="sc">${fmtCoins(p.score)}</span>`;
           node.appendChild(row);
         });
+        /* 局外代币结算：名次系数 × 局级底分（economy.js 缺失时静默跳过） */
+        const econ = global.MJEconomy;
+        if (econ && playerRank > 0) {
+          const delta = econ.settleMatch(playerRank);
+          const relief = econ.maybeRelief();
+          const line = this.el('div', 'coin-delta ' + (delta >= 0 ? 'gain' : 'loss'));
+          line.textContent = (delta >= 0 ? '代币 + ' : '代币 − ') + econ.fmt(Math.abs(delta)) +
+            '（' + econ.stakeInfo().name + ' · 第 ' + playerRank + ' 名）· 余额 ' + econ.fmt(econ.getCoins());
+          node.appendChild(line);
+          if (relief > 0) {
+            const tip = this.el('div', 'coin-relief', '破产补助 + ' + econ.fmt(relief) + '，明天继续来把麻将！');
+            node.appendChild(tip);
+          }
+        }
         const btns = this.el('div', 'modal-btns');
         const again = this.el('button', 'act-btn', '再 来 一 局');
         again.type = 'button';

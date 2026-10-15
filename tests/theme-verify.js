@@ -38,12 +38,19 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const samples = [];
   for (let i = 0; i < 3; i++) {
     if (i > 0) {
-      await page.evaluate(() => document.getElementById('btn-theme').click());
+      /* 🎨 现在打开皮肤面板（解锁制），测试直接驱动 setTheme 换肤 */
+      await page.evaluate((id) => window.__mahjong.ui.t3d.setTheme(id), names[i]);
       await sleep(900);
     }
     const info = await page.evaluate(() => ({
       theme: window.MJTable3D.currentTheme(),
-      ls: localStorage.getItem('mj-theme'),
+      unlocked: window.MJEconomy.ownedSkins(),
+      skinPanelOpens: (function () {
+        document.getElementById('btn-theme').click();
+        const rows = document.querySelectorAll('.skin-row').length;
+        document.querySelector('.modal-btns .act-btn')?.click();
+        return rows === 3;
+      })(),
     }));
     const shot = path.join(OUT, `theme-verify-${names[i]}.png`);
     await page.screenshot({ path: shot });

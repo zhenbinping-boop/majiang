@@ -29,8 +29,90 @@
       const runId = ++this._runId;
       this.running = true;
       this.bindTopbar();
+      this.syncEconomyChip();
+      this.validateThemeUnlocked();
       this.engine.startMatch();
       await this.handLoop(runId);
+    }
+
+    /* ---------- 局外代币 ---------- */
+
+    /** 顶栏同步：局级徽标 + 代币余额 */
+    syncEconomyChip() {
+      const econ = global.MJEconomy;
+      if (!econ) return;
+      const chip = this.ui.$('stake-chip');
+      if (chip) chip.textContent = econ.stakeInfo().name;
+      econ.renderCoins();
+    }
+
+    /** 启动时校验：本地记录的皮肤若未解锁（换设备/清缓存），回退到默认翡翠 */
+    validateThemeUnlocked() {
+      const econ = global.MJEconomy;
+      const t3d = this.ui.t3d;
+      if (!econ || !t3d || !t3d.currentTheme) return;
+      if (!econ.isUnlocked(t3d.currentTheme()) && t3d.setTheme) t3d.setTheme('jade');
+    }
+
+    /** 🎨 皮肤面板：已解锁的可直接切换，未解锁的用代币购买 */
+    openSkinPanel() {
+      const ui = this.ui;
+      const econ = global.MJEconomy;
+      if (!econ) return;
+      if (!ui.t3d || !ui.t3d.setTheme) { ui.toast('皮肤切换需 WebGL 3D 牌桌'); return; }
+      const t3d = ui.t3d;
+      const cur = t3d.currentTheme ? t3d.currentTheme() : 'jade';
+      const owned = econ.ownedSkins();
+      const node = document.createDocumentFragment();
+      node.appendChild(ui.el('h2', '', '雀 桌 皮 肤'));
+      const list = ui.el('div', 'skin-list');
+      econ.SKIN_ORDER.forEach((id) => {
+        const s = econ.SKINS[id];
+        const isOwned = owned.indexOf(id) >= 0;
+        const inUse = id === cur;
+        const row = ui.el('div', 'skin-row' + (inUse ? ' in-use' : ''));
+        const sw = ui.el('span', 'skin-swatch');
+        sw.style.background = s.swatch;
+        const info = ui.el('div', 'skin-info');
+        info.innerHTML = '<b>' + s.name + '</b><span>' +
+          (inUse ? '使用中' : isOwned ? '已拥有' : econ.fmt(s.price) + ' 代币') + '</span>';
+        const act = ui.el('button', 'act-btn' + (inUse ? ' pass' : ''));
+        act.type = 'button';
+        if (inUse) { act.textContent = '使用中'; act.disabled = true; }
+        else if (isOwned) {
+          act.textContent = '换 上';
+          act.addEventListener('click', () => {
+            ui.sound.tick();
+            if (t3d.setTheme(id)) { ui.closeModal(); this.openSkinPanel(); }
+          });
+        } else {
+          act.textContent = '解 锁';
+          act.addEventListener('click', () => {
+            const r = econ.unlockSkin(id);
+            if (r.ok) {
+              ui.sound.chime();
+              ui.toast('已解锁 · ' + s.name);
+              if (t3d.setTheme(id)) { ui.closeModal(); this.openSkinPanel(); }
+            } else if (r.reason === 'poor') {
+              ui.toast('代币不足 · 还差 ' + econ.fmt(s.price - econ.getCoins()));
+            } else {
+              ui.toast('解锁失败，请重试');
+            }
+          });
+        }
+        row.appendChild(sw); row.appendChild(info); row.appendChild(act);
+        list.appendChild(row);
+      });
+      node.appendChild(list);
+      const foot = ui.el('div', 'skin-foot', '代币来自每场总结算 · 名次越高赢得越多');
+      node.appendChild(foot);
+      const btns = ui.el('div', 'modal-btns');
+      const close = ui.el('button', 'act-btn pass', '关 闭');
+      close.type = 'button';
+      close.addEventListener('click', () => { ui.sound.tick(); ui.closeModal(); });
+      btns.appendChild(close);
+      node.appendChild(btns);
+      ui.openModal(node);
     }
 
     restart() {
@@ -61,11 +143,7 @@
       if (themeBtn) {
         themeBtn.addEventListener('click', () => {
           ui.sound.tick();
-          if (ui.t3d && ui.t3d.cycleTheme) {
-            ui.toast('雀桌皮肤 · ' + ui.t3d.cycleTheme());
-          } else {
-            ui.toast('皮肤切换需 WebGL 3D 牌桌');
-          }
+          this.openSkinPanel();
         });
       }
       ui.$('btn-restart').addEventListener('click', () => this.confirmRestart());

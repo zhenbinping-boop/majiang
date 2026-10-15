@@ -153,6 +153,22 @@
       if (game && game.ui && game.ui.sound) game.ui.sound.tick();
       enterGame(false);
     });
+
+    /* 局级（牌局规格）选择：底分决定总结算代币变动幅度 */
+    const econ = window.MJEconomy || null;
+    if (econ) {
+      const stakePick = $('stake-pick');
+      if (stakePick) {
+        stakePick.addEventListener('click', (ev) => {
+          const btn = ev.target.closest('.stake-btn');
+          if (!btn) return;
+          econ.setStake(btn.getAttribute('data-stake'));
+        });
+        econ.renderStakePick();
+      }
+      econ.maybeRelief();
+      econ.renderCoins();
+    }
     if (btnResume) btnResume.addEventListener('click', () => {
       if (game && game.ui && game.ui.sound) game.ui.sound.tick();
       enterGame(true);
