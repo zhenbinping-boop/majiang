@@ -25,9 +25,9 @@ const shot = (name) => path.join(OUT, name + '.png');
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 /**
- * 启动层已加入 #home 主界面 + #intro 入场动画；#app 牌桌初始 hidden。
+ * 启动层是 #home 主界面（深绿麻将墙背景）；#app 牌桌初始 hidden。
  * 所有针对牌桌的用例都必须先经此函数进场。
- * 返回 Promise，resolve 表示已进牌桌且 #home / #intro 均已退场。
+ * 返回 Promise，resolve 表示已进牌桌且 #home 均已退场。
  */
 async function enterTable(page, timeout = 20000) {
   await page.waitForFunction(
@@ -42,11 +42,9 @@ async function enterTable(page, timeout = 20000) {
     () => {
       const home = document.getElementById('home');
       const app = document.getElementById('app');
-      const intro = document.getElementById('intro');
       const homeAway = !home || home.classList.contains('hidden');
-      const introAway = !intro || intro.classList.contains('gone') || intro.classList.contains('hidden');
       const appUp = app && !app.classList.contains('hidden');
-      return homeAway && introAway && appUp;
+      return homeAway && appUp;
     },
     { timeout, polling: 80 }
   ).catch(() => {});

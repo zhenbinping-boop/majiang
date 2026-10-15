@@ -25,15 +25,15 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 /**
  * 从主界面进入牌桌并等到布局稳定。
- * #home / #intro 是 fixed 覆盖层，进场后必须确实退场（hidden / gone），
- * 否则它们会压住 #app，测出来的 rect 全是 0。
+ * #home 是 fixed 覆盖层，进场后必须确实退场（hidden），
+ * 否则它会压住 #app，测出来的 rect 全是 0。
  */
 async function enterTable(page) {
   await page.waitForFunction(
-    () => window.__mjHome && window.MJIntro && document.getElementById('home'),
+    () => window.__mjHome && window.MJWall && document.getElementById('home'),
     { timeout: 10000, polling: 60 }
   );
-  // 入场动画可能仍在跑：点「快速开局」会直接终止它
+  // 点「开始游戏」→ 翻牌放大转场后进入牌桌
   await page.evaluate(() => {
     const q = document.getElementById('btn-quick');
     if (q) q.click();
@@ -42,14 +42,12 @@ async function enterTable(page) {
     () => {
       const home = document.getElementById('home');
       const app = document.getElementById('app');
-      const intro = document.getElementById('intro');
       const homeAway = !home || home.classList.contains('hidden');
-      const introAway = !intro || intro.classList.contains('gone') || intro.classList.contains('hidden');
       const appUp = app && !app.classList.contains('hidden');
       const hand = document.querySelectorAll('#hand .tile, #my-hand .tile, .hand .tile').length;
-      return homeAway && introAway && appUp && hand > 0;
+      return homeAway && appUp && hand > 0;
     },
-    { timeout: 10000, polling: 80 }
+    { timeout: 15000, polling: 80 }
   ).catch(() => {});
   await sleep(120);
 }

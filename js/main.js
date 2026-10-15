@@ -3,11 +3,11 @@
  *
  * 启动流程：
  *   1. 先把「主界面」（#home）亮出来 —— 它是 HTML 里静态写好的，首帧即可见，
- *      不需要等任何脚本，保证「打开就有东西看」。
- *   2. 在主界面上叠一层入场动画（#intro，洗牌拼标题）。动画只是覆盖层，
- *      不阻塞任何东西；跳过 / 播完 / 兜底计时器三者谁先到就谁结束。
- *   3. 用户点「快速开局」才真正创建对局控制器并启动（lazy，首屏零等待）；
- *      点「继续上局」则直接复用那局控制器，跳过入场动画。
+ *      不需要等任何脚本，保证「打开就有东西看」。启动**不带任何过渡动画**。
+ *   2. 背景的深绿麻将墙由 js/wall.js 铺排并持续流动（纯背景，不阻塞任何东西）。
+ *   3. 用户点「开始游戏」时才真正创建对局控制器并启动（lazy，首屏零等待）；
+ *      同时播放转场：整墙翻牌 → 由屏幕中心向外放大 → 交棒牌桌。
+ *      点「继续上局」则复用那局控制器，只做推近、不重放翻牌。
  */
 (function () {
   'use strict';
@@ -44,8 +44,11 @@
     bindViewportVars();
 
     const home = $('home');
-    const intro = $('intro');
     const app = $('app');
+
+    /** 深绿麻将墙（背景 + 翻牌转场）。铺排失败也不影响主界面可用 */
+    const wall = (window.MJWall && $('hm-wall')) ? window.MJWall.init($('hm-wall')) : null;
+    const ZOOM_MS = (wall && wall.TIMES) ? wall.TIMES.ZOOM_MS : 720;
 
     /** 对局控制器（懒创建） */
     let game = null;
@@ -84,15 +87,19 @@
     }
 
     /* ---------- 界面切换 ---------- */
-    /** 主界面 → 牌桌：主界面淡出，然后交班 */
+    /** 主界面 → 牌桌：麻将墙翻牌并向外放大，然后交班 */
     async function enterGame(resume) {
       if (busy) return;
       busy = true;
 
-      // 关掉还在播的入场动画，免得和转场打架
-      if (intro) { intro.classList.add('gone'); intro.innerHTML = '<div id="intro-tiles" class="intro-tiles"></div>'; }
-      if (home) home.classList.add('leaving');
-      await sleep(resume ? 60 : 420);
+      if (wall && !resume) {
+        // 开局：整墙翻牌 → 由屏幕中心向外放大淡出
+        await wall.flipAndZoom();
+      } else if (home) {
+        // 继续上局：不重放翻牌，只做一次推近，保持转场语言一致
+        home.classList.add('entering');
+        await sleep(ZOOM_MS);
+      }
 
       if (home) home.classList.add('hidden');
       if (app) app.classList.remove('hidden');
@@ -134,6 +141,8 @@
 
       if (app) app.classList.add('hidden');
       if (home) home.classList.remove('hidden', 'leaving');
+      // 牌墙回到「牌背朝上」，下次点「开始游戏」可重放翻牌
+      if (wall) wall.reset();
 
       busy = false;
     }
@@ -187,15 +196,10 @@
     };
     document.addEventListener('pointerdown', unlock);
 
-    /* ---------- 播入场动画 ---------- */
-    if (intro && window.MJIntro) {
-      window.MJIntro.run(intro, { onDone: () => { /* 动画结束即可交互，无需额外动作 */ } });
-    } else if (intro) {
-      intro.classList.add('gone');
-    }
+    /* ---------- 牌墙已由 wall.init() 铺好并开始流动，无启动动画 ---------- */
 
     /* 调试用 */
-    window.__mjHome = { enterGame: enterGame, backToHome: backToHome };
+    window.__mjHome = { enterGame: enterGame, backToHome: backToHome, wall: wall };
   }
 
   if (document.readyState === 'loading') {
