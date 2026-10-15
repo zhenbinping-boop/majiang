@@ -282,6 +282,12 @@
       const cw = this.$('cp-wind'); if (cw) cw.textContent = wind;
       const cr = this.$('cp-round'); if (cr) cr.textContent = this.engine.roundName;
       const cwl = this.$('cp-wall'); if (cwl) cwl.textContent = '余 ' + left + ' 张';
+      // 3D 罗盘同步：局数 / 余牌 / 四家座风（罗盘 CanvasTexture 平面绘制，不重叠）
+      if (this.t3d && this.t3d.setCompassInfo) {
+        this.t3d.setCompassInfo(
+          this.engine.roundName, '余 ' + left + ' 张',
+          this.engine.players.map((p) => WIND_NAMES[p.wind]));
+      }
       for (let pid = 0; pid < 4; pid++) {
         const m = this.$('cpm-' + pid);
         if (m) m.textContent = WIND_NAMES[this.engine.players[pid].wind];

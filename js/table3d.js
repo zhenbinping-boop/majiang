@@ -2,17 +2,21 @@
  * table3d.js — Three.js 真 3D 牌桌渲染器（HUD 2D 浮层 + 3D 立体场景）
  *
  * 职责：
- *   ① 3D 麻将桌台：深蓝绒布桌面 + 鎏金木质边框 + 中央下沉式八角电子风位罗盘
- *   ② 真六面体双层麻将块：象牙骨瓷白牌肉(72%) + 琥珀朱红背壳(28%)，
- *      正面贴 tiles.js 的 SVG 高清 CanvasTexture（零外部图片素材）
- *   ③ 四家三维布局：牌河 6×3 平铺 / 手牌桌沿立牌 / 副露横置被鸣牌
- *   ④ 《雀魂》风 3D 手部（HandActor）：摸牌推入 / 拍牌出牌(320ms 抛物线+翻面+
- *      落桌冲击波) / 吃碰杠挥手 + 镜头震动
+ *   ① 3D 麻将桌台：深蓝绒布桌面 + 鎏金木质边框 + 中央八角电子风位罗盘
+ *      （罗盘整体绘制在 512×512 CanvasTexture 上：中心局数/余牌 + 四内缘座风，
+ *       当前行动家鎏金高亮 + 指示灯点亮 —— 所有文字同一平面，绝不重叠）
+ *   ② 真六面体一体成型麻将块：正面牌面 CanvasTexture / 侧面象牙 / 背面朱红
+ *   ③ 雀魂式三维布局：牌河 6×3（四角零重叠）/ 手牌与副露同一条桌沿基准线
+ *      （手牌居左、副露向右手角平铺，总长恒 ≤ 14 张，永不穿模）
+ *   ④ 纯麻将块补间动画（无手部模型）：摸牌 180ms 上方落入 / 出牌 220ms 抛物线
+ *      飞入牌河 + 金色波纹 / 吃碰杠 220ms 副露聚拢就位
  *   ⑤ Raycaster 射线选牌（我方手牌：悬停升起 / 单击选中 / 再击出牌）
  *
  * 降级：无 WebGL / 构造异常时 mount() 返回 null，ui.js 自动回退平面 DOM 渲染。
  * 坐标系：与「横屏逻辑视口」一致 —— 画布在 #app 旋转容器内按布局尺寸工作，
  *         竖屏时 CSS 旋转由外层完成，Three 只需按容器逻辑宽高 setSize。
+ * 世界系：相机在 (0, +Y, +Z) 朝向桌心 ⇒ 屏幕左 = -X、右 = +X；
+ *         Seat 0=我(南,+Z) 1=右家(东,+X) 2=对家(北,-Z) 3=左家(西,-X)。
  */
 (function (global) {
   'use strict';
@@ -20,41 +24,46 @@
   const T = global.THREE;
   if (!T) return;
 
-  /* ================= 常量 ================= */
-  const TILE_W = 2.2, TILE_H = 3.0, TILE_D = 1.6;   // 宽:高:厚 = 2.2:3.0:1.6
-  const TILE_R = 0.26, BEVEL = 0.075;               // 圆角与倒角（加大倒角=更润的骨瓷手感）
-  const HAND_TILT = 0;                              // 我方手牌后仰角（0 = 完全正对镜头，2D 观感；AI 牌仍为 3D）
+  /* ================= 常量（雀魂式比例基准） ================= */
+  const TILE_W = 1.15, TILE_H = 1.56, TILE_D = 0.82;  // 宽:长:厚（世界单位）
+  const GAP = 0.06;                                    // 牌间微缝
+  const TILE_R = 0.13, BEVEL = 0.04;                   // 圆角与倒角
 
   const RIVER_COLS = 6, RIVER_ROWS = 3;
-  const RX = TILE_W + 0.18, RZ = TILE_H + 0.18;     // 牌河间距
-  const HAND_PITCH = TILE_W + 0.34;                 // 手牌间距（第 14 张摸牌距见 drawGap）
-  const DRAW_GAP = 0.4;                             // 摸牌自动留出的间距
-
-  const RIVER_INNER = 4.6;                          // 牌河内缘距桌心
-  const HAND_Z = RIVER_INNER + RIVER_ROWS * RZ + 3.2;  // 手牌立牌桌沿
-  const MELD_Z = HAND_Z - 2.6;                      // 副露行（手牌与牌河之间）
-  const MELD_X0 = 9.4;                              // 副露起点（向右铺）
+  const RX = TILE_W + GAP;                             // 1.21 —— 行内步进
+  const RZ = TILE_H + GAP;                             // 1.62 —— 换行步进
+  const R_COMPASS = 2.5;                               // 中央罗盘外径
+  const R_RIVER = 4.45;                                // 牌河第 1 行中心距桌心
+                                                       //（> 行半宽 3.63，且经对角
+                                                       //   分离轴验证四角零重叠）
+  const R_HAND = 9.6;                                  // 手牌/副露桌沿基准线
+  const HAND_PITCH = TILE_W + GAP;                     // 手牌步进
+  const DRAW_GAP = 0.35 * TILE_W;                      // 摸牌自动留出的间距
+  const MELD_GAP = 0.6;                                // 手牌段与副露段间距
+  const GROUP_GAP = 0.3;                               // 副露组间距
 
   const COL = {
-    felt: 0x0d2c55, feltHi: 0x123562,
-    wood: 0x6d4a22, woodHi: 0x8a5f2c, gold: 0xd8b46c,
+    felt: 0x061528, feltHi: 0x0a2140,
+    wood: 0x6d4a22, gold: 0xd8b46c,
     ivory: 0xf5eedc, shell: 0x9b2d1f,
-    skin: 0xf2cba2, skinDark: 0xd9a878,
     compass: 0x0a0f26, compassRim: 0xd8b46c,
   };
 
-  /* 座位几何：0=我(南,面朝镜头) 1=右家(东) 2=对家(北) 3=左家(西) */
-  const SEAT_YAW = [0, -Math.PI / 2, Math.PI, Math.PI / 2];
-  /** 每座位「朝向桌心」的单位向量（俯视） */
-  const SEAT_DIR = [
-    { x: 0, z: 1 }, { x: -1, z: 0 }, { x: 0, z: -1 }, { x: 1, z: 0 },
+  /* 座位几何（相机视角）：0=我(南,屏幕下) 1=右家(东,右) 2=对家(北,上) 3=左家(西,左) */
+  const SEAT_DIR = [                      // 桌心 → 座位（向外）单位向量
+    { x: 0, z: 1 }, { x: 1, z: 0 }, { x: 0, z: -1 }, { x: -1, z: 0 },
+  ];
+  const SEAT_YAW = [0, Math.PI / 2, Math.PI, -Math.PI / 2];  // 立牌/平铺字朝向
+  /** 各家自身视角的「右手」方向：手牌从左到右升序 = 沿此方向递增；
+      牌河行内从其左手到右手 = 同一方向；换行向 +SEAT_DIR（靠近自身）推进 */
+  const TAN = [
+    { x: 1, z: 0 }, { x: 0, z: -1 }, { x: -1, z: 0 }, { x: 0, z: 1 },
   ];
 
   /* ================= 小工具 ================= */
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
   const easeInOutQuad = (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-  const easeOutBack = (t) => { const c = 1.70158; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
 
   /* ---- 微型补间系统（RAF 驱动） ---- */
   const tweens = [];
@@ -64,6 +73,7 @@
       t0: performance.now() + (opts.delay || 0),
       dur, onUpdate, onDone: opts.onDone || null,
       ease: opts.ease || easeOutCubic, dead: false,
+      tag: opts.tag || null,
     };
     tweens.push(tw);
     return tw;
@@ -114,8 +124,9 @@
   }
 
   /* ---- 麻将块几何（共享，单几何三材质组：正面牌面 / 侧面象牙 / 背面朱红） ----
-     旧版 body+shell 双层拼接在侧面有可见接缝；改为单次 Extrude 后按三角形法线
-     重排顶点分成三个 group，一体成型零接缝。 */
+     局部坐标系约定：+z = 花色正面（CanvasTexture）、-z = 红/绿牌背、
+     ±x / ±y = 象牙侧壁；平躺亮面 = R_x(-90°)，之后只绕世界 Y 轴旋转 ——
+     绝不绕 X/Z 翻 90°，杜绝把纯白侧面翻到上面变成「白块」。 */
   let _tileGeo = null;
   function tileGeo() {
     if (_tileGeo) return _tileGeo;
@@ -190,29 +201,11 @@
     return tex;
   }
 
-  /** 文字纹理（罗盘发光字 / 其它 UI 贴图） */
-  function textTexture(str, opt) {
-    opt = opt || {};
-    const cv = document.createElement('canvas');
-    cv.width = opt.w || 128; cv.height = opt.h || 128;
-    const g = cv.getContext('2d');
-    g.clearRect(0, 0, cv.width, cv.height);
-    g.font = (opt.weight || 700) + ' ' + (opt.size || 84) + 'px "STKaiti","KaiTi","Kaiti SC","楷体",serif';
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    if (opt.glow) { g.shadowColor = opt.glow; g.shadowBlur = 22; }
-    g.fillStyle = opt.color || '#ffe9b0';
-    g.fillText(str, cv.width / 2, cv.height / 2 + (opt.dy || 0));
-    const tex = new T.CanvasTexture(cv);
-    tex.encoding = T.sRGBEncoding;
-    tex.anisotropy = 4;
-    return tex;
-  }
-
   /* ================= 麻将块 Mesh ================= */
 
   /**
    * 一体成型麻将块（单 Mesh 三材质组，无分层接缝）。
-   * local：+z 为牌面法线、+y 为牌面「上」方向、y∈[0,厚]（底部贴桌面时用姿态四元数摆放）。
+   * local：+z 为牌面法线、-z 为牌背、+y 为牌面「上」方向。
    */
   function makeTile(tileIndex, mats, MJ) {
     const m = new T.Mesh(tileGeo(), [mats.face(tileIndex), mats.sideIvory, mats.sideShell]);
@@ -222,204 +215,32 @@
     return m;
   }
 
-  /** 平铺（牌面朝上）：先翻平再绕世界 Y 转座位朝向 */
+  /** 平躺（牌面朝上、字朝 pid 自己）：R_y(yaw)·R_x(-90°)，yaw 只绕世界 Y */
   const _qTmp = new T.Quaternion(), _qFlat = new T.Quaternion(), _qYaw = new T.Quaternion();
-  const _eX = new T.Euler();
+  const _eX = new T.Euler(), _AXIS_Y = new T.Vector3(0, 1, 0);
   function flatQuat(yaw) {
     _eX.set(-Math.PI / 2, 0, 0);
     _qFlat.setFromEuler(_eX);
-    _qYaw.setFromAxisAngle(new T.Vector3(0, 1, 0), yaw);
+    _qYaw.setFromAxisAngle(_AXIS_Y, yaw);
     return _qTmp.copy(_qYaw).multiply(_qFlat).clone();
   }
   const FLAT_QUATS = SEAT_YAW.map(flatQuat);
 
-  /* 我方手牌公告牌姿态：牌面法线精确指向相机（fixed rig），与 2D 贴图等效 */
-  const CAM_DIR = new T.Vector3(0, 0.94, 0.72).normalize();
-  const BILLBOARD_QUAT = new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 0, 1), CAM_DIR);
-
-  /* ================= 3D 手部（HandActor） ================= */
-
-  const HAND_MAT = {
-    skin: null, skinDark: null, gold: null, cuff: null,
-  };
-  function handMats() {
-    if (!HAND_MAT.skin) {
-      HAND_MAT.skin = new T.MeshStandardMaterial({ color: COL.skin, roughness: 0.55, metalness: 0.02 });
-      HAND_MAT.skinDark = new T.MeshStandardMaterial({ color: COL.skinDark, roughness: 0.6, metalness: 0.02 });
-      HAND_MAT.gold = new T.MeshStandardMaterial({ color: COL.gold, roughness: 0.25, metalness: 0.65 });
-      HAND_MAT.cuff = new T.MeshStandardMaterial({ color: 0x14264d, roughness: 0.5, metalness: 0.15 });
-    }
-    return HAND_MAT;
-  }
-
-  class HandActor {
-    constructor(seat) {
-      this.seat = seat;
-      this.mats = handMats();
-      this.root = new T.Group();
-      this.root.visible = false;
-      this._build();
-      this.busy = false;
-    }
-
-    _build() {
-      const M = this.mats;
-      const g = new T.Group();          // 手掌局部系：指尖朝 +z，腕在 -z
-      // 手掌：压扁球体
-      const palm = new T.Mesh(new T.SphereGeometry(0.85, 20, 14), M.skin);
-      palm.scale.set(1.0, 0.42, 1.25);
-      palm.position.set(0, 0, 0);
-      palm.castShadow = true;
-      g.add(palm);
-      // 四指（带第一关节弯曲）
-      for (let i = 0; i < 4; i++) {
-        const f = new T.Mesh(new T.CapsuleGeometry(0.13, 0.55, 4, 10), i % 2 ? M.skinDark : M.skin);
-        f.rotation.x = Math.PI / 2 - 0.35;      // 指尖前伸并微微下扣
-        f.position.set(-0.48 + i * 0.32, 0.08, 1.18);
-        f.castShadow = true;
-        g.add(f);
-        const tip = new T.Mesh(new T.CapsuleGeometry(0.115, 0.3, 4, 8), M.skinDark);
-        tip.rotation.x = Math.PI / 2 - 0.75;
-        tip.position.set(-0.48 + i * 0.32, -0.06, 1.72);
-        g.add(tip);
-      }
-      // 拇指
-      const thumb = new T.Mesh(new T.CapsuleGeometry(0.15, 0.5, 4, 10), M.skin);
-      thumb.rotation.set(Math.PI / 2 - 0.4, 0, -0.9);
-      thumb.position.set(-0.82, 0.1, 0.55);
-      thumb.castShadow = true;
-      g.add(thumb);
-      // 手腕玉镯 + 袖口
-      const bangle = new T.Mesh(new T.TorusGeometry(0.52, 0.075, 10, 24), M.gold);
-      bangle.rotation.x = Math.PI / 2;
-      bangle.position.set(0, 0, -0.85);
-      g.add(bangle);
-      const cuff = new T.Mesh(new T.CylinderGeometry(0.6, 0.72, 0.7, 20), M.cuff);
-      cuff.rotation.x = Math.PI / 2;
-      cuff.position.set(0, 0, -1.3);
-      cuff.castShadow = true;
-      g.add(cuff);
-      this.hand = g;
-      this.root.add(g);
-    }
-
-    /** 待机位：桌沿外侧、手背朝上悬停 */
-    restPos() {
-      const d = SEAT_DIR[this.seat];
-      const r = HAND_Z + 2.4;
-      return new T.Vector3(d.x * 0, 1.1, 0).add(new T.Vector3(d.x * 0, 0, d.z * r)).add(new T.Vector3(d.x * (this.seat % 2 ? 0 : 4.5), 0, d.z * 0));
-    }
-
-    /** 出牌：伸向手牌区拈牌 → 抛物线抬升翻面 → 拍落牌河格位 */
-    playDiscard(ctx, onLand) {
-      if (this.busy) { if (onLand) onLand(); return; }
-      this.busy = true;
-      const seat = this.seat;
-      const d = SEAT_DIR[seat];
-      const yaw = SEAT_YAW[seat];
-      const from = ctx.fromPos;         // 手牌区拈牌点（世界系）
-      const to = ctx.toPos;             // 牌河落点（世界系）
-      const yawQ = flatQuat(yaw);
-
-      // 手从桌沿外伸入拈牌点
-      const rest = this.restPos();
-      this.root.visible = true;
-      this.root.position.copy(rest);
-      const grab = rest.clone().lerp(new T.Vector3(from.x, from.y + 0.6, from.z), 0.9);
-
-      const tile = ctx.tileMesh;        // 由外部创建的携带牌（已入场景）
-      tile.visible = false;
-
-      tween(150, (k) => {
-        this.root.position.lerpVectors(rest, grab, k);
-      }, {
-        ease: easeOutCubic, tag: 'hand' + seat,
-        onDone: () => {
-          // 拈住牌，沿贝塞尔抛物线飞向牌河
-          tile.visible = true;
-          const apex = new T.Vector3(
-            from.x * 0.35 + to.x * 0.65,
-            Math.max(from.y, to.y) + 4.6,
-            from.z * 0.35 + to.z * 0.65);
-          const p0 = from.clone(), p2 = to.clone();
-          const q0 = tile.quaternion.clone();
-          const q1 = yawQ.clone();
-          const slamT = 230, flyT = 200;
-          tween(flyT, (k) => {
-            const a = p0.clone().lerp(apex, k);
-            const b = apex.clone().lerp(p2, k);
-            tile.position.copy(a.lerp(b, k));
-            tile.quaternion.slerpQuaternions(q0, q1, clamp(k * 1.25, 0, 1));
-          }, {
-            ease: easeInOutQuad, tag: 'hand' + seat,
-            onDone: () => {
-              // 「啪」拍落：快速下压 + 手收回
-              tween(slamT, (k) => {
-                tile.position.y = p2.y + (1 - k) * 0.5;
-                this.root.position.lerpVectors(grab, rest, k);
-                this.root.visible = k < 0.98;
-              }, {
-                ease: easeOutCubic, tag: 'hand' + seat,
-                onDone: () => {
-                  tile.visible = false;   // 真牌由牌河组接棒显示
-                  this.busy = false;
-                  if (onLand) onLand();
-                },
-              });
-            },
-          });
-        },
-      });
-    }
-
-    /** 摸牌：手从牌桌中央轻推新牌入手牌最右 */
-    playDraw(ctx) {
-      if (this.busy) return;
-      this.busy = true;
-      const seat = this.seat;
-      const rest = this.restPos();
-      const d = SEAT_DIR[seat];
-      const at = new T.Vector3(ctx.toPos.x - d.x * 6, ctx.toPos.y + 1.2, ctx.toPos.z - d.z * 6);
-      this.root.visible = true;
-      this.root.position.copy(rest);
-      tween(110, (k) => { this.root.position.lerpVectors(rest, at, k); }, {
-        ease: easeOutCubic, tag: 'hand' + seat,
-        onDone: () => {
-          tween(110, (k) => { this.root.position.lerpVectors(at, rest, k); }, {
-            ease: easeInOutQuad, tag: 'hand' + seat,
-            onDone: () => { this.root.visible = false; this.busy = false; },
-          });
-        },
-      });
-    }
-
-    /** 吃 / 碰 / 杠：一挥手 + 镜头轻震（牌组重排由 sync 完成） */
-    playClaim(ctx) {
-      if (this.busy) return;
-      this.busy = true;
-      const seat = this.seat;
-      const rest = this.restPos();
-      const d = SEAT_DIR[seat];
-      const sweepTo = new T.Vector3(ctx.toPos.x, 2.2, ctx.toPos.z);
-      this.root.visible = true;
-      this.root.position.copy(rest);
-      tween(190, (k) => { this.root.position.lerpVectors(rest, sweepTo, k); }, {
-        ease: easeOutCubic, tag: 'hand' + seat,
-        onDone: () => {
-          tween(210, (k) => { this.root.position.lerpVectors(sweepTo, rest, k); }, {
-            ease: easeInOutQuad, tag: 'hand' + seat,
-            onDone: () => { this.root.visible = false; this.busy = false; },
-          });
-        },
-      });
-    }
-
-    dispose() {
-      killTweensOf('hand' + this.seat);
-      this.root.visible = false;
-      this.busy = false;
-    }
-  }
+  /* 我方手牌立牌姿态：牌面法线精确指向基准机位 —— 俯视相机下完全可读（2D 观感） */
+  const CAM_BASE_POS = new T.Vector3(0, 20.25, 15.89);   // _fitCamera 基准机位（k=0.9）
+  const MY_LOOK = new T.Vector3(
+    0, CAM_BASE_POS.y - TILE_H / 2, CAM_BASE_POS.z - (R_HAND + TILE_D / 2)).normalize();
+  const MY_STAND_QUAT = new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 0, 1), MY_LOOK);
+  /* AI 立牌：牌背朝桌心并整体上仰 35°（顶向桌外倾），高机位下红背清晰可见 */
+  const AI_TILT = 35 * Math.PI / 180;
+  const AI_STAND_QUATS = SEAT_DIR.map((d) => {
+    const c = Math.cos(AI_TILT), s = Math.sin(AI_TILT);
+    const F = new T.Vector3(d.x * c, -s, d.z * c);      // 牌面法线（微朝下）
+    const U = new T.Vector3(d.x * s, c, d.z * s);       // 牌顶方向（向桌外倾）
+    const X = new T.Vector3().crossVectors(U, F);
+    return new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(X, U, F));
+  });
+  function aiStandQuat(pid) { return AI_STAND_QUATS[pid]; }
 
   /* ================= 主类 ================= */
 
@@ -449,16 +270,26 @@
 
       /* ---- 场景 ---- */
       this.scene = new T.Scene();
-      this.scene.fog = new T.Fog(0x05070f, 60, 140);
+      this.scene.fog = new T.Fog(0x05070f, 70, 160);
 
-      this.camera = new T.PerspectiveCamera(46, 1, 0.1, 400);
+      this.camera = new T.PerspectiveCamera(40, 1, 0.1, 400);
       this.camShake = 0;
+
+      /* 布局缓存：手牌 / 副露同一条桌沿基准线的联合排版 */
+      this._handInfo = {};      // pid → { count, fresh }
+      this._meldInfo = {};      // pid → { total }
+      this._pulsePid = -1;      // 待播放「副露聚拢」动画的座位
+      this._pending = {};
+      /* 罗盘状态 */
+      this._compassTurn = 0;
+      this._compassL1 = '';
+      this._compassL2 = '';
+      this._compassWinds = null;
 
       this._buildLights();
       this._buildTable();
       this._buildCompass();
       this._buildGroups();
-      this._buildHands();
       this._buildCursor();
 
       /* ---- 材质库 ---- */
@@ -508,90 +339,96 @@
 
     /* ---------- 场景搭建 ---------- */
     _buildLights() {
-      const hemi = new T.HemisphereLight(0xbfd8ff, 0x3a2a18, 0.85);
+      const hemi = new T.HemisphereLight(0xbfd8ff, 0x3a2a18, 0.6);
       this.scene.add(hemi);
-      const spot = new T.SpotLight(0xfff2dc, 1.15, 160, Math.PI / 3.4, 0.45, 1.2);
-      spot.position.set(7, 42, 10);
+      const spot = new T.SpotLight(0xfff2dc, 1.1, 160, Math.PI / 3.4, 0.45, 1.2);
+      spot.position.set(5, 30, 9);
       spot.castShadow = true;
       spot.shadow.mapSize.set(2048, 2048);
       spot.shadow.bias = -0.0006;
       this.scene.add(spot);
       this.scene.add(spot.target);
       const warm = new T.PointLight(0xffd9a0, 0.55, 60);
-      warm.position.set(0, 10, 14);
+      warm.position.set(0, 9, 11);
       this.scene.add(warm);
     }
 
     _buildTable() {
-      // 绒布桌面（大圆角矩形：按最宽逻辑视口预留，保证任何宽高比下都能铺满画面）
-      const FW = 170, FD = 92;                 // 半宽 85 / 半深 46（FIT 常量见 _fitCamera）
-      const feltGeo = extrudeRounded(FW, FD, 5, 0.8, 0.3);
+      // 绒布桌面（大圆角矩形：足够覆盖任何宽高比下的相机视锥落地面）
+      const FW = 76, FD = 46, ZC = -4;
+      const feltGeo = extrudeRounded(FW, FD, 4, 0.8, 0.3);
       feltGeo.rotateX(-Math.PI / 2);
       const felt = new T.Mesh(feltGeo, new T.MeshStandardMaterial({
         color: COL.felt, roughness: 0.95, metalness: 0,
       }));
-      felt.position.y = -0.8;
+      felt.position.set(0, -0.8, ZC);
       felt.receiveShadow = true;
       this.scene.add(felt);
       // 中心的亮一圈（渐变高光贴片）
       const hi = new T.Mesh(
-        new T.CircleGeometry(14, 48),
-        new T.MeshBasicMaterial({ color: COL.feltHi, transparent: true, opacity: 0.35 }));
+        new T.CircleGeometry(9, 48),
+        new T.MeshBasicMaterial({ color: COL.feltHi, transparent: true, opacity: 0.32 }));
       hi.rotation.x = -Math.PI / 2;
       hi.position.y = 0.012;
       this.scene.add(hi);
       // 鎏金木质边框（四条）
       const woodMat = new T.MeshStandardMaterial({ color: COL.wood, roughness: 0.42, metalness: 0.25 });
       const rimMat = new T.MeshStandardMaterial({ color: COL.gold, roughness: 0.3, metalness: 0.6 });
-      const bw = 2.4, bh = 1.5;
-      const hx = FW / 2 + bw / 2, hz = FD / 2 + bw / 2;
-      [[0, -hz, FW + bw * 2, bw], [0, hz, FW + bw * 2, bw]].forEach(([x, z, w, d]) => {
+      const bw = 1.7, bh = 1.1;
+      const hx = FW / 2 + bw / 2;
+      const zN = ZC - (FD / 2 + bw / 2), zS = ZC + (FD / 2 + bw / 2);
+      [[0, zN, FW + bw * 2, bw], [0, zS, FW + bw * 2, bw]].forEach(([x, z, w, d]) => {
         const m = new T.Mesh(new T.BoxGeometry(w, bh, d), woodMat);
         m.position.set(x, bh / 2 - 0.9, z);
         m.castShadow = true; m.receiveShadow = true;
         this.scene.add(m);
-        const trim = new T.Mesh(new T.BoxGeometry(w * 0.99, 0.22, 0.34), rimMat);
-        trim.position.set(x, bh - 0.75, z + (z > 0 ? -d / 2 - 0.05 : d / 2 + 0.05));
+        const trim = new T.Mesh(new T.BoxGeometry(w * 0.99, 0.2, 0.3), rimMat);
+        trim.position.set(x, bh - 0.72, z + (z > ZC ? -d / 2 - 0.05 : d / 2 + 0.05));
         this.scene.add(trim);
       });
-      [[-hx, 0, bw, FD], [hx, 0, bw, FD]].forEach(([x, z, w, d]) => {
+      [[-hx, ZC, bw, FD], [hx, ZC, bw, FD]].forEach(([x, z, w, d]) => {
         const m = new T.Mesh(new T.BoxGeometry(w, bh, d), woodMat);
         m.position.set(x, bh / 2 - 0.9, z);
         m.castShadow = true; m.receiveShadow = true;
         this.scene.add(m);
-        const trim = new T.Mesh(new T.BoxGeometry(0.34, 0.22, d * 0.99), rimMat);
-        trim.position.set(x + (x > 0 ? -w / 2 - 0.05 : w / 2 + 0.05), bh - 0.75, z);
+        const trim = new T.Mesh(new T.BoxGeometry(0.3, 0.2, d * 0.99), rimMat);
+        trim.position.set(x + (x > 0 ? -w / 2 - 0.05 : w / 2 + 0.05), bh - 0.72, z);
         this.scene.add(trim);
       });
     }
 
+    /* ---- 中央八角罗盘：整体绘制在 512×512 CanvasTexture 上 ----
+       中心圆盘两行（局数 / 余牌）+ 四内缘扇区座风字（各自朝向对应座位，
+       当前出牌方鎏金发光，其余暗金）—— 同一平面精确排版，绝不重叠。 */
     _buildCompass() {
       const g = new T.Group();
-      // 底座（金圈）+ 黑金八角盘（下沉）
+      const oct = { thetaStart: Math.PI / 8 };   // 八角边面向四家
       const rim = new T.Mesh(
-        new T.CylinderGeometry(4.35, 4.55, 0.5, 8),
+        new T.CylinderGeometry(R_COMPASS + 0.18, R_COMPASS + 0.35, 0.5, 8, 1, false, oct.thetaStart),
         new T.MeshStandardMaterial({ color: COL.compassRim, roughness: 0.3, metalness: 0.7 }));
       rim.position.y = 0.1;
       rim.receiveShadow = true;
       g.add(rim);
       const plate = new T.Mesh(
-        new T.CylinderGeometry(4.0, 4.0, 0.42, 8),
+        new T.CylinderGeometry(R_COMPASS, R_COMPASS, 0.42, 8, 1, false, oct.thetaStart),
         new T.MeshStandardMaterial({ color: COL.compass, roughness: 0.35, metalness: 0.4 }));
       plate.position.y = 0.14;
       plate.receiveShadow = true;
       g.add(plate);
-      // 发光「电子网格」顶面
-      const gridTex = this._gridTexture();
+      this._compassCv = document.createElement('canvas');
+      this._compassCv.width = this._compassCv.height = 512;
+      this._compassTex = new T.CanvasTexture(this._compassCv);
+      this._compassTex.encoding = T.sRGBEncoding;
+      this._compassTex.anisotropy = 4;
       const top = new T.Mesh(
-        new T.CircleGeometry(3.75, 8),
-        new T.MeshBasicMaterial({ map: gridTex, transparent: true, opacity: 0.9 }));
+        new T.PlaneGeometry(R_COMPASS * 2, R_COMPASS * 2),
+        new T.MeshBasicMaterial({ map: this._compassTex, transparent: true }));
       top.rotation.x = -Math.PI / 2;
-      top.rotation.z = Math.PI / 8;
-      top.position.y = 0.365;
+      top.position.y = 0.36;
       g.add(top);
-      // 四方座位指示灯（当前行动家点亮；文字信息由 2D 铭牌承担，避免重叠）
+      // 四颗座位指示灯（当前行动家点亮，与座风字高亮呼应）
       this.windBlocks = [];
-      const dotGeo = new T.SphereGeometry(0.28, 14, 10);
+      const dotGeo = new T.SphereGeometry(0.15, 14, 10);
       for (let i = 0; i < 4; i++) {
         const mat = new T.MeshStandardMaterial({
           color: 0x37507a, emissive: 0x000000, emissiveIntensity: 0,
@@ -599,33 +436,89 @@
         });
         const dot = new T.Mesh(dotGeo, mat);
         const d = SEAT_DIR[i];
-        dot.position.set(d.x * 3.2, 0.44, d.z * 3.2);
+        dot.position.set(d.x * 2.05, 0.44, d.z * 2.05);
         g.add(dot);
         this.windBlocks.push({ mesh: dot, mat });
       }
       this.scene.add(g);
       this.compass = g;
+      this._drawCompass();
     }
 
-    _gridTexture() {
-      const cv = document.createElement('canvas');
-      cv.width = cv.height = 256;
+    _drawCompass() {
+      const cv = this._compassCv;
+      if (!cv) return;
       const g = cv.getContext('2d');
-      g.fillStyle = 'rgba(6,10,24,.92)';
-      g.fillRect(0, 0, 256, 256);
-      g.strokeStyle = 'rgba(120,160,220,.30)';
-      g.lineWidth = 1;
-      for (let i = 0; i <= 256; i += 16) {
-        g.beginPath(); g.moveTo(i, 0); g.lineTo(i, 256); g.stroke();
-        g.beginPath(); g.moveTo(0, i); g.lineTo(256, i); g.stroke();
+      const W = 512, C = 256, R = 250;
+      g.clearRect(0, 0, W, W);
+      // 八角盘面（边面向四家：顶点在 22.5°+k·45°）
+      g.beginPath();
+      for (let k = 0; k < 8; k++) {
+        const a = Math.PI / 8 + k * Math.PI / 4;
+        const x = C + Math.sin(a) * R, y = C - Math.cos(a) * R;
+        if (k) g.lineTo(x, y); else g.moveTo(x, y);
       }
-      g.strokeStyle = 'rgba(216,180,108,.5)';
+      g.closePath();
+      g.fillStyle = 'rgba(7,11,28,0.96)';
+      g.fill();
+      g.strokeStyle = 'rgba(216,180,108,0.85)';
+      g.lineWidth = 5;
+      g.stroke();
+      // 电子网格 + 同心环（裁剪在八角内）
+      g.save();
+      g.clip();
+      g.strokeStyle = 'rgba(120,160,220,0.14)';
+      g.lineWidth = 1;
+      for (let i = -R + 26; i < R; i += 26) {
+        g.beginPath(); g.moveTo(C + i, C - R); g.lineTo(C + i, C + R); g.stroke();
+        g.beginPath(); g.moveTo(C - R, C + i); g.lineTo(C + R, C + i); g.stroke();
+      }
+      g.strokeStyle = 'rgba(216,180,108,0.4)';
+      g.lineWidth = 2.5;
+      g.beginPath(); g.arc(C, C, 208, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.arc(C, C, 160, 0, Math.PI * 2); g.stroke();
+      g.restore();
+      // 中心圆盘：两行文字（局数 / 余牌）
+      g.beginPath(); g.arc(C, C, 118, 0, Math.PI * 2);
+      g.fillStyle = 'rgba(12,18,44,0.92)';
+      g.fill();
+      g.strokeStyle = 'rgba(216,180,108,0.55)';
       g.lineWidth = 3;
-      g.beginPath(); g.arc(128, 128, 96, 0, Math.PI * 2); g.stroke();
-      g.beginPath(); g.arc(128, 128, 60, 0, Math.PI * 2); g.stroke();
-      const tex = new T.CanvasTexture(cv);
-      tex.encoding = T.sRGBEncoding;
-      return tex;
+      g.stroke();
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillStyle = '#ffe9b0';
+      g.font = '700 52px "STKaiti","KaiTi","Kaiti SC",serif';
+      g.fillText(this._compassL1 || '东一局', C, C - 27);
+      g.fillStyle = 'rgba(245,239,221,0.75)';
+      g.font = '600 33px "STKaiti","KaiTi","Kaiti SC",serif';
+      g.fillText(this._compassL2 || '余 83 张', C, C + 35);
+      // 四内缘座风字：各自朝向对应座位（canvas 上=北/对家，右=东/右家）
+      const winds = this._compassWinds || ['东', '南', '西', '北'];
+      const pos = [
+        [C, C + 192, Math.PI],        // pid0 南：字顶朝 +Z（canvas 下）→ 转 180°
+        [C + 192, C, Math.PI / 2],    // pid1 东：字顶朝 +X（canvas 右）→ 转 +90°
+        [C, C - 192, 0],              // pid2 北：字顶朝 -Z（canvas 上）
+        [C - 192, C, -Math.PI / 2],   // pid3 西：字顶朝 -X（canvas 左）→ 转 -90°
+      ];
+      for (let pid = 0; pid < 4; pid++) {
+        const [x, y, rot] = pos[pid];
+        const active = pid === this._compassTurn;
+        g.save();
+        g.translate(x, y);
+        g.rotate(rot);
+        g.font = '700 64px "STKaiti","KaiTi","Kaiti SC",serif';
+        if (active) {
+          g.shadowColor = 'rgba(255,200,90,0.95)';
+          g.shadowBlur = 26;
+          g.fillStyle = '#ffe9b0';
+        } else {
+          g.shadowBlur = 0;
+          g.fillStyle = 'rgba(216,180,108,0.42)';
+        }
+        g.fillText(winds[pid] || '东', 0, 0);
+        g.restore();
+      }
+      this._compassTex.needsUpdate = true;
     }
 
     _buildGroups() {
@@ -636,16 +529,6 @@
         });
         this.scene.add(this.groups[pid].hand, this.groups[pid].river, this.groups[pid].meld);
       }
-      /* 光标（金色四棱锥，悬浮于最新弃牌上） */
-    }
-
-    _buildHands() {
-      this.hands = [];
-      for (let pid = 0; pid < 4; pid++) {
-        const h = new HandActor(pid);
-        this.hands.push(h);
-        this.scene.add(h.root);
-      }
     }
 
     _buildCursor() {
@@ -653,7 +536,7 @@
         color: COL.gold, emissive: 0xaa7a20, emissiveIntensity: 0.9,
         roughness: 0.25, metalness: 0.7,
       });
-      this.cursor = new T.Mesh(new T.ConeGeometry(0.55, 1.0, 4), mat);
+      this.cursor = new T.Mesh(new T.ConeGeometry(0.4, 0.8, 4), mat);
       this.cursor.rotation.x = Math.PI;
       this.cursor.visible = false;
       this.scene.add(this.cursor);
@@ -661,44 +544,54 @@
 
     /* ---------- 布局 ---------- */
 
-    /** 牌河第 i 张的世界坐标（平铺） */
-    riverSlot(pid, i) {
-      const col = i % RIVER_COLS, row = (i / RIVER_COLS) | 0;
-      const d = SEAT_DIR[pid];
-      // 内缘 → 外缘铺；列沿切向展开
-      const tangent = { x: -d.z, z: d.x };
-      const along = (col - (RIVER_COLS - 1) / 2) * RX;
-      const out = RIVER_INNER + (row + 0.5) * RZ;
-      return new T.Vector3(
-        tangent.x * along + d.x * out,
-        TILE_D / 2 + 0.02,
-        tangent.z * along + d.z * out);
+    /** 手牌 + 副露联合排版：同一条桌沿基准线，整块沿「自身右手」方向居中；
+        手牌占左手侧、副露紧随其后向右手角平铺 —— 手牌每吃碰一次少 3 张，
+        总长恒 ≤ 14 张牌长，几何上杜绝副露与手牌/牌河穿模。 */
+    _seatLayout(pid) {
+      const h = this._handInfo[pid] || { count: 13, fresh: -1 };
+      const mw = (this._meldInfo[pid] || { total: 0 }).total;
+      const handW = h.count * HAND_PITCH + (h.fresh >= 0 ? DRAW_GAP : 0);
+      const total = handW + (mw > 0 ? MELD_GAP + mw : 0);
+      return { start: -total / 2, handW, total };
     }
 
-    /** 手牌第 i 张立牌坐标（含摸牌第 14 张的额外间距） */
-    handSlot(pid, i, count) {
-      const d = SEAT_DIR[pid];
-      const tangent = { x: -d.z, z: d.x };
-      const gap = (pid === 0 && count >= 14 && i === count - 1) ? DRAW_GAP : 0;
-      const along = (i - (count - 1) / 2) * HAND_PITCH + gap;
-      const base = HAND_Z + TILE_D / 2;
+    /** 牌河第 i 张的世界坐标：每行 6 张、行内从该玩家左手到右手、
+        换行向靠近其自身（远离罗盘）推进；第 1 行中心距桌心 R_RIVER=4.45 */
+    riverSlot(pid, i) {
+      const col = i % RIVER_COLS, row = (i / RIVER_COLS) | 0;
+      const d = SEAT_DIR[pid], t = TAN[pid];
+      const along = (col - (RIVER_COLS - 1) / 2) * RX;
+      const out = R_RIVER + row * RZ;
       return new T.Vector3(
-        tangent.x * along + d.x * base,
+        t.x * along + d.x * out,
+        TILE_D / 2 + 0.02,
+        t.z * along + d.z * out);
+    }
+
+    /** 手牌第 i 张立牌坐标（从左到右升序；摸牌在最右并留 DRAW_GAP 间距） */
+    handSlot(pid, i, count) {
+      const t = TAN[pid], d = SEAT_DIR[pid];
+      const L = this._seatLayout(pid);
+      const fresh = (this._handInfo[pid] || {}).fresh;
+      const along = L.start + TILE_W / 2 + i * HAND_PITCH + (i === fresh ? DRAW_GAP : 0);
+      const base = R_HAND + TILE_D / 2;
+      return new T.Vector3(
+        t.x * along + d.x * base,
         TILE_H / 2 + 0.02,
-        tangent.z * along + d.z * base);
+        t.z * along + d.z * base);
     }
 
     /* ---------- 同步（由 ui.js 调） ---------- */
 
-    /** 手牌立牌同步：diff 复用 mesh，新牌可播放入场 */
+    /** 手牌立牌同步：diff 复用 mesh；新牌 180ms 从上方 0.6 落入（摸牌） */
     syncHand(pid, tiles, opts) {
       opts = opts || {};
       const grp = this.groups[pid].hand;
-      // 我方手牌公告牌姿态（牌面正对相机 → 完全 2D 观感）；
-      // AI 手牌牌背朝桌心 → 面朝外
-      const standQuat = pid === 0
-        ? BILLBOARD_QUAT
-        : new T.Quaternion().setFromEuler(new T.Euler(0, SEAT_YAW[pid], 0));
+      this._handInfo[pid] = {
+        count: tiles.length,
+        fresh: (pid === 0 && opts.freshIdx !== undefined) ? opts.freshIdx : -1,
+      };
+      const standQuat = pid === 0 ? MY_STAND_QUAT : aiStandQuat(pid);
       while (grp.children.length > tiles.length) {
         const m = grp.children.pop();
         killTweensOf(m.uuid);
@@ -709,15 +602,26 @@
         if (!mesh) {
           mesh = makeTile(tIdx, this.mats, this.MJ);
           grp.add(mesh);
+          const target = this.handSlot(pid, i, tiles.length);
           if (opts.animate) {
-            const target = this.handSlot(pid, i, tiles.length);
-            mesh.position.set(target.x, target.y + 6, target.z);
+            // 发牌入场：整手牌从上方错峰落下
+            mesh.position.set(target.x, target.y + 5, target.z);
             mesh.quaternion.copy(standQuat);
-            tween(340, (k) => { mesh.position.y = target.y + 6 * (1 - k); }, {
-              delay: i * 34, ease: easeOutCubic, tag: mesh.uuid,
+            const ty = target.y;
+            tween(340, (e) => { mesh.position.y = ty + 5 * (1 - e); }, {
+              delay: i * 30, ease: easeOutCubic, tag: mesh.uuid,
             });
-            return;
+          } else {
+            // 摸牌：180ms 从上方 0.6 平滑落入
+            mesh.position.set(target.x, target.y + 0.6, target.z);
+            mesh.quaternion.copy(standQuat);
+            const ty = target.y;
+            tween(180, (e) => { mesh.position.y = ty + 0.6 * (1 - e); }, {
+              ease: easeOutCubic, tag: mesh.uuid,
+            });
           }
+          if (pid === 0) mesh.userData.baseY = target.y;
+          return;
         }
         // 更新：牌面 / 位置（数量变化时重排）
         if (mesh.userData.tileIndex !== tIdx) {
@@ -745,7 +649,7 @@
       }
     }
 
-    /** 牌河同步；pendingPid 的最后一张先隐藏，等手部落桌后 reveal（按座位分槽） */
+    /** 牌河同步；pendingPid 的最后一张先隐藏，等落桌后 reveal（按座位分槽） */
     syncRivers(discards, cursorPid, opts) {
       opts = opts || {};
       this._pending = this._pending || {};
@@ -765,8 +669,8 @@
             mesh.quaternion.copy(q);
             mesh.position.copy(target);
             if (opts.animateNew && isLast && !hideLast) {
-              mesh.position.y = target.y + 3;
-              tween(180, (k) => { mesh.position.y = target.y + 3 * (1 - k); }, {
+              mesh.position.y = target.y + 2;
+              tween(180, (e) => { mesh.position.y = target.y + 2 * (1 - e); }, {
                 ease: easeOutCubic, tag: mesh.uuid,
               });
             }
@@ -778,7 +682,7 @@
           const heldPending = this._pending[pid] && this._pending[pid].mesh === mesh;
           if (hideLast && isLast) {
             const old = this._pending[pid];
-            if (old && old.mesh !== mesh) old.mesh.visible = true;   // 同座位连续出牌：旧 pending 立即揭示，防永久隐藏
+            if (old && old.mesh !== mesh) old.mesh.visible = true;   // 同座位连续出牌：旧 pending 立即揭示
             mesh.visible = false;
             this._pending[pid] = { mesh, pid };
           } else if (!heldPending) {
@@ -791,7 +695,7 @@
         if (pid === cursorPid && tiles.length) {
           const top = this.riverSlot(pid, tiles.length - 1);
           this.cursor.visible = true;
-          this.cursor.position.set(top.x, TILE_D + 1.3, top.z);
+          this.cursor.position.set(top.x, TILE_D + 1.0, top.z);
           this._cursorTile = top;
         }
       }
@@ -800,41 +704,59 @@
       }
     }
 
-    /** 副露同步（含横置被鸣牌 / 暗杠两端翻面）：组沿切向累计排开，超出换行 */
+    /** 副露同步：与手牌同一条桌沿基准线（手牌左、副露右）；平躺只绕 Y 旋转，
+        被鸣牌额外转 90° 并偏移对齐；暗杠两端翻面（牌背朝上） */
     syncMelds(pid, melds) {
       const grp = this.groups[pid].meld;
       const q = FLAT_QUATS[pid];
-      while (grp.children.length) grp.remove(grp.children.pop());
-      const d = SEAT_DIR[pid];
-      const tangent = { x: -d.z, z: d.x };
-      const WRAP_AT = 21;                       // 切向超过此值换行（换到更外侧一行）
-      const ROW_OUT = 2.7;                      // 行间距（沿朝向桌心方向）
-      let cursor = 5.6, row = 0, claimedCount = 0;
+      while (grp.children.length) {
+        const m = grp.children.pop();
+        killTweensOf(m.uuid);
+        grp.remove(m);
+      }
+      const t = TAN[pid], d = SEAT_DIR[pid];
+      const base = R_HAND + TILE_D / 2;
+      const total = melds.reduce((s, m) => {
+        const cl = (m.from >= 0 && m.tiles.indexOf(m.tile) >= 0) ? 0.25 : 0;
+        return s + m.tiles.length * HAND_PITCH + cl;
+      }, 0) + Math.max(0, melds.length - 1) * GROUP_GAP;
+      this._meldInfo[pid] = { total };
       grp.userData.groupCount = melds.length;
+      // 吃/碰/杠聚拢动画（playClaim 标记 → 本次重建的牌错峰落入）
+      const pulse = this._pulsePid === pid;
+      if (pulse) this._pulsePid = -1;
+      const L = this._seatLayout(pid);
+      let acc = L.start + L.handW + (melds.length ? MELD_GAP : 0);
+      let claimedCount = 0, idx = 0;
       melds.forEach((m) => {
-        const groupW = m.tiles.length * (TILE_W + 0.12) + 0.5;
-        if (cursor + groupW > WRAP_AT) { cursor = 5.6; row++; }
         // 被鸣牌下标：吃牌的被鸣牌通常在中间（如 2p[3p]4p），碰/杠则在第 0 张
         const claimedIdx = m.from >= 0 ? m.tiles.indexOf(m.tile) : -1;
+        const isConcealedKong = m.kind === 'concealed_kong' ||
+          (m.tiles.length === 4 && m.from < 0 && !m.added);
+        let extra = 0;
         m.tiles.forEach((tIdx, k) => {
           const claimed = k === claimedIdx;
-          const isConcealedKong = m.kind === 'concealed_kong' ||
-            (m.tiles.length === 4 && m.from < 0 && !m.added);
           const faceDown = isConcealedKong && (k === 0 || k === 3);
           const mesh = makeTile(tIdx, this.mats, this.MJ);
           mesh.quaternion.copy(q);
-          if (claimed) { mesh.rotateY(Math.PI / 2); claimedCount++; }   // 被鸣牌横置 90°
-          if (faceDown) mesh.rotateX(Math.PI);           // 暗杠两端牌背朝上
-          const off = (k - (m.tiles.length - 1) / 2) * (TILE_W + 0.12)
-            + (claimed ? (TILE_W + 0.12) * 0.3 : 0);
-          const out = MELD_Z + row * ROW_OUT;
-          mesh.position.set(
-            tangent.x * (cursor + off) + d.x * out,
-            TILE_D / 2 + 0.02,
-            tangent.z * (cursor + off) + d.z * out);
+          if (claimed) { mesh.rotateY(Math.PI / 2); claimedCount++; }  // 横置 90°（顶面仍朝上）
+          if (faceDown) mesh.rotateX(Math.PI);                         // 暗杠两端牌背朝上
+          const along = acc + TILE_W / 2 + extra + k * HAND_PITCH
+            + (claimed ? (TILE_H - TILE_W) / 2 * 0.7 : 0);
+          const ty = TILE_D / 2 + 0.02;
+          mesh.position.set(t.x * along + d.x * base, ty, t.z * along + d.z * base);
+          if (pulse) {
+            mesh.position.y = ty + 0.9;
+            tween(220, (e) => { mesh.position.y = ty + 0.9 * (1 - e); }, {
+              delay: idx * 35, ease: easeOutCubic, tag: mesh.uuid,
+            });
+          }
           grp.add(mesh);
+          if (claimed) extra += 0.25;
+          idx++;
         });
-        cursor += groupW;
+        acc += m.tiles.length * HAND_PITCH
+          + (claimedIdx >= 0 ? 0.25 : 0) + GROUP_GAP;
       });
       grp.userData.claimedCount = claimedCount;
     }
@@ -866,7 +788,7 @@
     _refreshMyHandVisual() {
       const grp = this.groups[0].hand;
       grp.children.forEach((mesh, i) => {
-        const lift = (i === this.selectedIdx) ? 0.45 : (i === this.hoverIdx ? 0.22 : 0);
+        const lift = (i === this.selectedIdx) ? 0.35 : (i === this.hoverIdx ? 0.18 : 0);
         const base = mesh.userData.baseY !== undefined ? mesh.userData.baseY : TILE_H / 2 + 0.02;
         if (!tweens.some((t) => t.tag === mesh.uuid && !t.dead)) {
           const y0 = mesh.position.y;
@@ -899,6 +821,8 @@
     }
 
     setTurn(pid) {
+      this._compassTurn = pid;
+      this._drawCompass();
       this.windBlocks.forEach((b, i) => {
         const active = i === pid;
         b.mat.emissive.setHex(active ? 0xffb84d : 0x000000);
@@ -907,53 +831,67 @@
       });
     }
 
-    /* ---------- 3D 手部动画入口 ---------- */
+    /** 中央罗盘文字（由 ui.js renderTopbar 同步）：局数 / 余牌 / 四家座风 */
+    setCompassInfo(line1, line2, winds) {
+      this._compassL1 = line1 || '';
+      this._compassL2 = line2 || '';
+      if (winds && winds.length === 4) this._compassWinds = winds.slice();
+      this._drawCompass();
+    }
 
-    /** 出牌：从手牌区拈起一张临时牌拍向牌河；onLand 时揭示真牌 */
+    /* ---------- 纯麻将块补间动画（无手部模型） ---------- */
+
+    /** 出牌（220ms）：打出的牌从手牌区沿轻抛物线飞入牌河目标格位，
+        落桌瞬间金色波纹消散 + 镜头轻震；onLand 揭示牌河真牌 */
     playDiscard(pid, discards, cursorPid) {
-      const handCount = this.myHandTiles ? this.myHandTiles.length + 1 : 14;
-      const fromPos = this.handSlot(pid, Math.min(13, handCount - 1), handCount).clone();
-      fromPos.y = TILE_H / 2 + 0.6;
       const i = discards[pid].length - 1;
-      const toPos = this.riverSlot(pid, i).clone();
+      if (i < 0) return;
       const tileIdx = discards[pid][i];
+      const toPos = this.riverSlot(pid, i).clone();
+      const t = TAN[pid], d = SEAT_DIR[pid];
+      // 出手点：手牌区靠右手端、立牌高度
+      const fromPos = new T.Vector3(
+        t.x * 3.2 + d.x * (R_HAND - 0.4),
+        TILE_H * 0.8,
+        t.z * 3.2 + d.z * (R_HAND - 0.4));
       const carried = makeTile(tileIdx, this.mats, this.MJ);
-      const q = FLAT_QUATS[pid];
       carried.position.copy(fromPos);
-      // 起飞姿态与站立姿态一致：我方公告牌拈牌，AI 牌背朝桌心
-      if (pid === 0) carried.quaternion.copy(BILLBOARD_QUAT);
-      else carried.quaternion.setFromEuler(new T.Euler(0, SEAT_YAW[pid], 0));
+      const q0 = pid === 0 ? MY_STAND_QUAT : aiStandQuat(pid);
+      const q1 = FLAT_QUATS[pid];
+      carried.quaternion.copy(q0);
       this.scene.add(carried);
-      this.hands[pid].playDiscard({ fromPos, toPos, tileMesh: carried }, () => {
-        this.scene.remove(carried);
-        // 揭示牌河真牌 + 冲击波
-        const pr = this._pending && this._pending[pid];
-        if (pr) { pr.mesh.visible = true; delete this._pending[pid]; }
-        this._shockwave(toPos);
-        this._shake(0.5);
+      const apex = fromPos.clone().lerp(toPos, 0.5);
+      apex.y += 2.0;
+      tween(220, (e, k) => {
+        const a = fromPos.clone().lerp(apex, k);
+        const b = apex.clone().lerp(toPos, k);
+        carried.position.copy(a.lerp(b, k));
+        carried.quaternion.slerpQuaternions(q0, q1, clamp(k * 1.4, 0, 1));
+      }, {
+        ease: easeInOutQuad,
+        onDone: () => {
+          this.scene.remove(carried);
+          const pr = this._pending && this._pending[pid];
+          if (pr) { pr.mesh.visible = true; delete this._pending[pid]; }
+          this._shockwave(toPos);
+          this._shake(0.35);
+        },
       });
     }
 
-    /** 摸牌：手推入 */
-    playDraw(pid) {
-      const grp = this.groups[pid].hand;
-      const i = grp.children.length - 1;
-      const toPos = this.handSlot(pid, i, grp.children.length).clone();
-      this.hands[pid].playDraw({ toPos });
-    }
+    /** 摸牌：动画由 syncHand 的新牌落入补间呈现（180ms 上方 0.6 落入） */
+    playDraw(pid) { /* no-op：syncHand 已覆盖 */ }
 
-    /** 吃碰杠挥手 + 镜头震动 */
+    /** 吃/碰/杠（220ms）：副露牌在副露区平滑聚拢就位（syncMelds 播放错峰落入） */
     playClaim(pid) {
-      const d = SEAT_DIR[pid];
-      const toPos = new T.Vector3(d.x * MELD_X0, 1.5, d.z * MELD_Z);
-      this.hands[pid].playClaim({ toPos });
-      this._shake(0.9);
+      this._pulsePid = pid;
+      this._shake(0.3);
     }
 
     /** 落点金色水波纹 */
     _shockwave(pos) {
       const ring = new T.Mesh(
-        new T.RingGeometry(0.4, 0.85, 40),
+        new T.RingGeometry(0.3, 0.62, 40),
         new T.MeshBasicMaterial({
           color: 0xffd98c, transparent: true, opacity: 0.95,
           side: T.DoubleSide, blending: T.AdditiveBlending, depthWrite: false,
@@ -962,14 +900,14 @@
       ring.position.set(pos.x, 0.1, pos.z);
       this.scene.add(ring);
       tween(460, (k) => {
-        ring.scale.setScalar(1 + k * 4.2);
+        ring.scale.setScalar(1 + k * 3.6);
         ring.material.opacity = 0.95 * (1 - k);
       }, { ease: easeOutCubic, onDone: () => this.scene.remove(ring) });
     }
 
     /** 镜头轻震 */
     _shake(power) {
-      this.camShake = Math.min(1.4, this.camShake + power);
+      this.camShake = Math.min(1.2, this.camShake + power);
     }
 
     /* ---------- 指针拾取 ---------- */
@@ -1043,86 +981,56 @@
       this.renderer.render(this.scene, this.camera);
     }
 
+    /* 雀魂式取景：fov40，基准机位 (0,22.5,17.5) → lookAt(0,0,1.4)；
+       按宽高比自动微调距离（沿视线方向缩放机位向量），保证窄屏/宽屏下
+       四家手牌 + 副露块四周均有充足留白。 */
     _fitCamera() {
-      const dir = new T.Vector3(0, 0.94, 0.72).normalize();
-      const target = new T.Vector3(0, 0, 1.2);
       const cam = this.camera;
+      cam.fov = 40;
       cam.updateProjectionMatrix();
+      const look = new T.Vector3(0, 0, 1.4);
+      const off = new T.Vector3(0, 22.5, 16.1);       // basePos - lookAt
       const v = new T.Vector3();
-      const projNdc = (p, dist) => {
-        cam.position.copy(target).addScaledVector(dir, dist);
-        cam.lookAt(target);
-        cam.updateMatrixWorld();
-        v.copy(p).project(cam);
-        return { x: v.x, y: v.y };
-      };
-      /* 桌面（绒布 + 木框外缘）投影四边形必须包含屏幕四角（略外扩 M），
-         即牌桌铺满整个画面、不留背景黑边（参考雀魂构图）。
-         桌角落到相机平面之后 ⇒ 相机已在桌面上方，视为必然覆盖。 */
-      const FX = 85, FZ = 46;          // 绒布半宽/半深 + 木框 2.4（与 _buildTable 一致）
-      const fx = FX + 2.4, fz = FZ + 2.4;
-      const feltPts = [
-        new T.Vector3(-fx, 0, -fz), new T.Vector3(fx, 0, -fz),
-        new T.Vector3(fx, 0, fz), new T.Vector3(-fx, 0, fz),
-      ];
-      /* 约束二：四家手牌立牌（含摸牌间距与立牌顶）必须完整在画面内 */
-      const span = (13 / 2) * HAND_PITCH + DRAW_GAP + TILE_W;
-      const handPts = [];
+      /* 内容约束：四家「手牌 + 副露」联合块角点（含立牌顶）全部在画面内 */
+      const SPAN = (14 / 2) * HAND_PITCH + DRAW_GAP + TILE_W;
+      const pts = [];
       for (let pid = 0; pid < 4; pid++) {
-        const d = SEAT_DIR[pid], tanx = -d.z, tanz = d.x, base = HAND_Z + TILE_D / 2;
-        for (const s of [-span, span]) {
-          handPts.push(
-            new T.Vector3(tanx * s + d.x * base, 0, tanz * s + d.z * base),
-            new T.Vector3(tanx * s + d.x * base, TILE_H + 0.6, tanz * s + d.z * base));
+        const t = TAN[pid], d = SEAT_DIR[pid], base = R_HAND + TILE_D / 2;
+        for (const s of [-SPAN, SPAN]) {
+          pts.push(
+            new T.Vector3(t.x * s + d.x * base, 0, t.z * s + d.z * base),
+            new T.Vector3(t.x * s + d.x * base, TILE_H + 0.55, t.z * s + d.z * base));
         }
       }
-      const M = 1.02;
-      const coversScreen = (dist) => {
-        const q = feltPts.map((p) => projNdc(p, dist));
-        for (const sx of [-M, M]) for (const sy of [-M, M]) {
-          let pos = false, neg = false;
-          for (let i = 0; i < 4; i++) {
-            const a = q[i], b = q[(i + 1) % 4];
-            const c = (b.x - a.x) * (sy - a.y) - (b.y - a.y) * (sx - a.x);
-            if (c > 1e-9) pos = true; else if (c < -1e-9) neg = true;
-          }
-          if (pos && neg) return false;   // 该屏幕角落在桌面四边形之外
+      const fits = (k) => {
+        cam.position.copy(look).addScaledVector(off, k);
+        cam.lookAt(look);
+        cam.updateMatrixWorld();
+        for (const p of pts) {
+          v.copy(p).project(cam);
+          if (v.x < -0.94 || v.x > 0.94 || v.y < -0.94 || v.y > 0.94) return false;
         }
         return true;
       };
-      const handsFit = (dist) => {
-        for (const p of handPts) {
-          const n = projNdc(p, dist);
-          if (n.x < -0.985 || n.x > 0.985 || n.y < -0.985 || n.y > 0.985) return false;
+      let k = 0.9;
+      if (!fits(k)) {
+        let lo = 0.9, hi = 2.4;
+        for (let i = 0; i < 18; i++) {
+          const mid = (lo + hi) / 2;
+          if (fits(mid)) hi = mid; else lo = mid;
         }
-        return true;
-      };
-      /* 铺满程度随距离单调递减：[lo 恒铺满, hi 恒不铺满]，二分收敛到边界 */
-      let lo = 20, hi = 110;
-      for (let i = 0; i < 16; i++) {
-        const mid = (lo + hi) / 2;
-        if (coversScreen(mid)) lo = mid; else hi = mid;
+        k = hi;
       }
-      let dist = lo;
-      if (!handsFit(dist)) {
-        /* 手牌可见性优先：回退到「四家手牌完整可见」的最小距离 */
-        let a = 10, b = dist;
-        for (let i = 0; i < 16; i++) {
-          const mid = (a + b) / 2;
-          if (handsFit(mid)) b = mid; else a = mid;
-        }
-        dist = b;
-      }
-      this.camDist = dist;
-      this._camBase = { target: target.clone(), dir, dist };
-      cam.position.copy(target).addScaledVector(dir, dist);
-      cam.lookAt(target);
+      this._camBase = { pos: look.clone().addScaledVector(off, k), look };
+      this.camK = k;
+      cam.position.copy(this._camBase.pos);
+      cam.lookAt(look);
     }
 
     _tick(now) {
       // 光标浮动
       if (this.cursor.visible) {
-        this.cursor.position.y = TILE_D + 1.3 + Math.sin(now / 380) * 0.28;
+        this.cursor.position.y = TILE_D + 1.0 + Math.sin(now / 380) * 0.22;
         this.cursor.rotation.y = now / 700;
       }
       // 镜头震动衰减
@@ -1130,10 +1038,10 @@
         this.camShake *= 0.86;
         const s = this.camShake;
         const base = this._camBase;
-        this.camera.position.copy(base.target).addScaledVector(base.dir, base.dist);
-        this.camera.position.x += (Math.random() - 0.5) * s * 0.7;
-        this.camera.position.y += (Math.random() - 0.5) * s * 0.5;
-        this.camera.lookAt(base.target);
+        this.camera.position.copy(base.pos);
+        this.camera.position.x += (Math.random() - 0.5) * s * 0.5;
+        this.camera.position.y += (Math.random() - 0.5) * s * 0.35;
+        this.camera.lookAt(base.look);
       }
     }
 
@@ -1150,6 +1058,9 @@
       }
       this._pending = {};
       this._sameTarget = null;
+      this._handInfo = {};
+      this._meldInfo = {};
+      this._pulsePid = -1;
       this.cursor.visible = false;
       this.hoverIdx = -1;
       this.selectedIdx = -1;
@@ -1196,7 +1107,6 @@
       this.destroyed = true;
       global.removeEventListener('resize', this._onResize);
       tweens.length = 0;
-      this.hands.forEach((h) => h.dispose());
       this.renderer.dispose();
       if (this.renderer.domElement.parentNode) {
         this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);

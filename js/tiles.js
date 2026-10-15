@@ -504,7 +504,13 @@
       o.connect(g); g.connect(ctx.destination);
       o.start(t); o.stop(t + dur + 0.05);
     }
-    clack() { this._noise(0.07, 2400, 1.5, 0.5); }
+    clack() {
+      // 双层叠加：木质桌面低频闷响（220Hz 短促正弦包络）
+      //          + 骨瓷牌面清脆碰击（1800Hz 带通滤波噪声）—— 温润厚实不刺耳
+      this._tone(220, 0.09, 0.32, 0, 'sine');
+      this._noise(0.05, 1800, 1.4, 0.42);
+      this._noise(0.03, 3600, 2, 0.16, 'bandpass', 0.006);
+    }
 
     pickFemaleVoice() {
       if (this._voice !== undefined) return this._voice;
@@ -522,9 +528,12 @@
       }
       const zh = vs.filter(v => /^(zh|cmn)/i.test(v.lang || ''));
       const pool = zh.length ? zh : vs;
+      // 优先自然神经网络人声（音色圆润，避免机械感）
+      const NATURAL = /xiaoxiao|xiaoyi|natural|online|google.*zh|ting-?ting|mei-?jia/i;
       const FEMALE = /xiaoxiao|xiaoyi|xiaomo|xiaoxuan|xiaorui|xiaohan|huihui|yaoyao|ting-?ting|mei-?jia|sinji|female|woman|girl/i;
       const MALE = /yunxi|yunjian|yunyang|yunjie|kangkang|liang|male|男/i;
-      this._voice = pool.find(v => FEMALE.test(v.name || ''))
+      this._voice = pool.find(v => NATURAL.test(v.name || ''))
+        || pool.find(v => FEMALE.test(v.name || ''))
         || pool.find(v => !MALE.test(v.name || '') && /zh|cmn/i.test(v.lang || ''))
         || pool.find(v => !MALE.test(v.name || ''))
         || pool[0] || null;
@@ -539,8 +548,8 @@
       try {
         const u = new Utter(text);
         u.lang = 'zh-CN';
-        u.rate = opts.rate === undefined ? 1.15 : opts.rate;
-        u.pitch = opts.pitch === undefined ? 1.45 : opts.pitch;
+        u.rate = opts.rate === undefined ? 1.02 : opts.rate;
+        u.pitch = opts.pitch === undefined ? 1.04 : opts.pitch;
         u.volume = Math.min(1, (opts.volume === undefined ? 1 : opts.volume) * this.volume);
         const v = this.pickFemaleVoice();
         if (v) u.voice = v;
@@ -566,27 +575,27 @@
       this._noise(0.045, 2700, 1.7, 0.42);
       this._tone(783.99, 0.13, 0.1, 0.01, 'triangle');
       this._tone(1174.66, 0.2, 0.09, 0.075, 'triangle');
-      this.speak('吃', { pitch: 1.5, rate: 1.18 });
+      this.speak('吃', { pitch: 1.06, rate: 1.05 });
     }
     pong() {
       this._noise(0.05, 1900, 1.1, 0.5);
       this._noise(0.075, 1150, 0.9, 0.42, 'bandpass', 0.045);
       this._tone(196, 0.24, 0.16, 0, 'sine');
       this._tone(392, 0.18, 0.1, 0.05, 'triangle');
-      this.speak('碰', { pitch: 1.34, rate: 1.12 });
+      this.speak('碰', { pitch: 1.02, rate: 1.02 });
     }
     kong() {
       this._noise(0.09, 1500, 0.9, 0.55);
       this._noise(0.12, 640, 0.8, 0.5, 'bandpass', 0.06);
       this._tone(261.63, 0.3, 0.15, 0, 'sine');
       this._tone(392, 0.24, 0.1, 0.06, 'triangle');
-      this.speak('杠', { pitch: 1.25, rate: 1.1 });
+      this.speak('杠', { pitch: 0.98, rate: 1.0 });
     }
     win() {
       [523.25, 659.25, 783.99, 1046.5, 1318.51].forEach((f, i) => this._tone(f, 0.55, 0.11, i * 0.08, 'sine'));
       this._tone(1567.98, 0.7, 0.07, 0.42, 'triangle');
       this._noise(0.35, 5600, 0.8, 0.14, 'highpass', 0.02);
-      this.speak('胡了', { pitch: 1.42, rate: 1.0, volume: 1.1 });
+      this.speak('胡啦', { pitch: 1.08, rate: 0.96, volume: 1.1 });
     }
     chime() {
       [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => this._tone(f, 0.5, 0.1, i * 0.09));

@@ -701,12 +701,12 @@ html, body {
 #my-melds { justify-content: center; min-height: 4px; }
 #my-melds:empty { display: none; }
 
-/* ---- 听牌实时预览浮条 (绝对定位，不挤占牌桌网格高度) ---- */
+/* ---- 听牌实时预览浮条 (固定屏幕左下角：我方信息胶囊正上方，不遮手牌/牌河) ---- */
 .ting-tip {
   position: absolute;
-  bottom: calc(100% + 4px);
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: 96px;
+  left: 16px;
+  transform: none;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1032,9 +1032,12 @@ html, body {
   font-size: 11px; letter-spacing: 1px; color: rgba(245, 239, 221, 0.42); margin-top: 3px;
   white-space: nowrap;
 }
-/* 回合提示：作为中央区的一行，不再与牌河叠压 */
+/* 回合提示：固定在屏幕顶部中央（紧贴顶栏下方），绝不遮挡底部手牌 */
 #turn-banner {
-  justify-self: center;
+  position: absolute; top: 48px; bottom: auto; left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  pointer-events: none;
   font-size: 13px; letter-spacing: 2px; color: var(--gold-lt);
   white-space: nowrap;
   padding: 3px 16px; border-radius: 999px;
@@ -1079,9 +1082,10 @@ html, body {
 #action-flash.k-win  { color: #fff6d8; font-size: 76px; text-shadow: 0 0 26px rgba(255, 215, 120, 1), 0 0 60px rgba(255, 180, 60, .8), 0 4px 16px rgba(0, 0, 0, .9); }
 
 /* =========== 操作栏 =========== */
+/* 固定右下角，与左下角听牌提示左右分置，完全避开底部中央手牌 */
 #action-bar {
-  position: absolute; left: 50%; bottom: calc(var(--tile-h) + 34px);
-  transform: translateX(-50%);
+  position: absolute; right: 20px; bottom: 110px; left: auto;
+  transform: none;
   display: flex; gap: 8px; z-index: 40;
   background: rgba(9, 13, 34, 0.94);
   border: 1px solid var(--gold);
@@ -1091,7 +1095,7 @@ html, body {
   animation: bar-in .25s ease;
   max-width: 96vw; flex-wrap: wrap; justify-content: center;
 }
-@keyframes bar-in { from { transform: translateX(-50%) translateY(12px); opacity: 0; } }
+@keyframes bar-in { from { transform: translateY(12px); opacity: 0; } }
 #action-bar.hidden { display: none; }
 .act-btn {
   border: none; border-radius: 999px;
@@ -1243,7 +1247,7 @@ html, body {
   .river-n, .river-s { width: calc(6 * (var(--rv-w) + var(--rv-gap)) - var(--rv-gap)); }
   .river-w, .river-e { width: calc(4 * (var(--rv-w) + var(--rv-gap)) - var(--rv-gap)); }
   .brand-name { display: none; }
-  #action-bar { bottom: calc(var(--tile-h) + 26px); padding: 6px 9px; gap: 6px; }
+  #action-bar { bottom: 88px; padding: 6px 9px; gap: 6px; }
   .act-btn { padding: 7px 12px; font-size: 14px; }
   .modal { padding: 16px; }
   #action-flash { font-size: 48px; }
@@ -1475,8 +1479,8 @@ html, body {
   .cp-core .cp-wind { font-size: 22px; }
   .cp-core .cp-round { font-size: 11px; letter-spacing: 1px; margin-top: 2px; }
   .cp-core .cp-wall { font-size: 9px; margin-top: 1px; }
-  /* 矮屏纵向紧张：操作栏再抬高一点，避免压到手牌牌面 */
-  #action-bar { bottom: calc(var(--tile-h) + 26px); }
+  /* 矮屏纵向紧张：操作栏略抬高，保持右下角不压手牌 */
+  #action-bar { bottom: 88px; }
 }
 
 /* =========================================================
@@ -1510,14 +1514,13 @@ html, body {
 #table.t3d #center-plaque,
 #table.t3d #turn-banner,
 #table.t3d #action-flash { pointer-events: none; }
-/* HUD 浮层压在 3D 画布之上 */
+/* HUD 浮层压在 3D 画布之上（#turn-banner 已 absolute 顶置，不改定位） */
 #table.t3d #seat-1, #table.t3d #seat-2, #table.t3d #seat-3,
-#table.t3d #me, #table.t3d #center, #table.t3d #action-flash,
-#table.t3d #turn-banner {
+#table.t3d #me, #table.t3d #center, #table.t3d #action-flash {
   position: relative;
   z-index: 2;
 }
-/* 玩家信息胶囊：半透明毛玻璃小卡片，不遮挡牌桌 */
+/* 玩家信息胶囊：半透明毛玻璃小卡片；3D 下固定左下角，让开底部中央手牌 */
 #table.t3d .panel {
   background: rgba(11, 17, 42, 0.68);
   backdrop-filter: blur(9px);
@@ -1526,9 +1529,12 @@ html, body {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.38);
   padding: 6px 10px;
 }
+#table.t3d #me-panel {
+  position: absolute; left: 12px; bottom: 12px; margin: 0;
+}
 #table.t3d .panel.active {
   border-color: rgba(255, 205, 120, 0.75);
   box-shadow: 0 0 18px rgba(255, 190, 90, 0.28);
 }
-/* 中央铭牌浮在罗盘正上方，3D 罗盘只做座风呼吸灯 */
-#table.t3d #center-plaque { z-index: 2; }
+/* 中央铭牌退场：3D 罗盘 CanvasTexture 已承担局数/余牌/座风（平面绘制不重叠） */
+#table.t3d #center-plaque { display: none; }
