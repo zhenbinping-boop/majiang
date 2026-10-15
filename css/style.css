@@ -1502,6 +1502,14 @@ html, body {
 #table.t3d .melds,
 #table.t3d .side-melds,
 #table.t3d #my-melds { display: none !important; }
+/* HUD 容器一律对指针透明 —— 否则铺满桌面的空容器（如 #rivers）会
+   拦截全部 pointer 事件，导致 3D 画布 Raycaster 永远收不到点击（无法出牌） */
+#table.t3d #center,
+#table.t3d #rivers,
+#table.t3d #me,
+#table.t3d #center-plaque,
+#table.t3d #turn-banner,
+#table.t3d #action-flash { pointer-events: none; }
 /* HUD 浮层压在 3D 画布之上 */
 #table.t3d #seat-1, #table.t3d #seat-2, #table.t3d #seat-3,
 #table.t3d #me, #table.t3d #center, #table.t3d #action-flash,
