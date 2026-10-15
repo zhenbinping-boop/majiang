@@ -22,8 +22,8 @@
 
   /* ================= 常量 ================= */
   const TILE_W = 2.2, TILE_H = 3.0, TILE_D = 1.6;   // 宽:高:厚 = 2.2:3.0:1.6
-  const BODY_D = 1.12, SHELL_D = 0.50;              // 牌肉 / 背壳分层（72% / 28%）
-  const TILE_R = 0.26, BEVEL = 0.055;               // 圆角与倒角
+  const TILE_R = 0.26, BEVEL = 0.075;               // 圆角与倒角（加大倒角=更润的骨瓷手感）
+  const HAND_TILT = 0.38;                           // 我方手牌后仰角（弧度，约 22°，雀魂风立体感）
 
   const RIVER_COLS = 6, RIVER_ROWS = 3;
   const RX = TILE_W + 0.18, RZ = TILE_H + 0.18;     // 牌河间距
@@ -113,40 +113,55 @@
     return geo;
   }
 
-  /* ---- 麻将块几何（共享） ---- */
-  let _bodyGeo = null, _shellGeo = null;
-  function bodyGeo() {
-    if (!_bodyGeo) {
-      _bodyGeo = extrudeRounded(TILE_W, TILE_H, TILE_R, BODY_D, BEVEL);
-      // 正面（normal.z>0.5）UV 归一到 0..1，供牌面贴图使用
-      const pos = _bodyGeo.attributes.position, uv = _bodyGeo.attributes.uv;
-      const n = _bodyGeo.attributes.normal;
-      for (let i = 0; i < uv.count; i++) {
-        if (n.getZ(i) > 0.5) {
-          uv.setXY(i, pos.getX(i) / TILE_W + 0.5, pos.getY(i) / TILE_H + 0.5);
-        }
+  /* ---- 麻将块几何（共享，单几何三材质组：正面牌面 / 侧面象牙 / 背面朱红） ----
+     旧版 body+shell 双层拼接在侧面有可见接缝；改为单次 Extrude 后按三角形法线
+     重排顶点分成三个 group，一体成型零接缝。 */
+  let _tileGeo = null;
+  function tileGeo() {
+    if (_tileGeo) return _tileGeo;
+    const geo = extrudeRounded(TILE_W, TILE_H, TILE_R, TILE_D - BEVEL * 2, BEVEL);
+    const pos = geo.attributes.position, nor = geo.attributes.normal, uv = geo.attributes.uv;
+    // 正面（含倒角上半段）UV 归一到 0..1，供牌面贴图使用
+    for (let i = 0; i < uv.count; i++) {
+      if (nor.getZ(i) > 0.5) {
+        uv.setXY(i, pos.getX(i) / TILE_W + 0.5, pos.getY(i) / TILE_H + 0.5);
       }
-      uv.needsUpdate = true;
     }
-    return _bodyGeo;
-  }
-  function shellGeo() {
-    if (!_shellGeo) {
-      _shellGeo = extrudeRounded(TILE_W, TILE_H, TILE_R, SHELL_D - BEVEL * 2, BEVEL);
-      _shellGeo.rotateX(Math.PI);          // 翻转使「正面」朝 -z（背壳朝外）
-      _shellGeo.translate(0, 0, 0.012);    // 与牌肉背面留极小缝，避免共面闪烁
+    // 按三角形平均法线把顶点分桶：正面 / 侧面 / 背面
+    const front = [], side = [], back = [];
+    for (let t = 0; t < pos.count; t += 3) {
+      const nz = (nor.getZ(t) + nor.getZ(t + 1) + nor.getZ(t + 2)) / 3;
+      const key = nz > 0.5 ? front : (nz < -0.5 ? back : side);
+      key.push(t, t + 1, t + 2);
     }
-    return _shellGeo;
+    const order = front.concat(side, back);
+    const n = pos.count;
+    const np = new Float32Array(n * 3), nn = new Float32Array(n * 3), nu = new Float32Array(n * 2);
+    for (let i = 0; i < n; i++) {
+      const s = order[i];
+      np[i * 3] = pos.getX(s); np[i * 3 + 1] = pos.getY(s); np[i * 3 + 2] = pos.getZ(s);
+      nn[i * 3] = nor.getX(s); nn[i * 3 + 1] = nor.getY(s); nn[i * 3 + 2] = nor.getZ(s);
+      nu[i * 2] = uv.getX(s); nu[i * 2 + 1] = uv.getY(s);
+    }
+    geo.setAttribute('position', new T.BufferAttribute(np, 3));
+    geo.setAttribute('normal', new T.BufferAttribute(nn, 3));
+    geo.setAttribute('uv', new T.BufferAttribute(nu, 2));
+    geo.clearGroups();
+    geo.addGroup(0, front.length, 0);                 // 正面 → 牌面贴图
+    geo.addGroup(front.length, side.length, 1);       // 侧面 → 象牙
+    geo.addGroup(front.length + side.length, back.length, 2);  // 背面 → 朱红壳
+    _tileGeo = geo;
+    return geo;
   }
 
   /* ================= 纹理 ================= */
 
-  /** 34 种牌面 CanvasTexture 缓存（SVG → 离屏 canvas 256×348） */
+  /** 34 种牌面 CanvasTexture 缓存（SVG → 离屏 canvas 512×696 高清） */
   const faceTexCache = new Map();
   function faceTexture(tileIndex, MJ) {
     let tex = faceTexCache.get(tileIndex);
     if (tex) return tex;
-    const cw = 256, ch = 348;
+    const cw = 512, ch = 696;
     const cv = document.createElement('canvas');
     cv.width = cw; cv.height = ch;
     const g = cv.getContext('2d');
@@ -154,19 +169,19 @@
     g.fillRect(0, 0, cw, ch);
     // 浅凹内阴影（模拟阴刻凹槽）
     g.strokeStyle = 'rgba(120,96,60,.20)';
-    g.lineWidth = 6;
-    g.strokeRect(9, 9, cw - 18, ch - 18);
+    g.lineWidth = 12;
+    g.strokeRect(18, 18, cw - 36, ch - 36);
     g.strokeStyle = 'rgba(255,255,255,.55)';
-    g.lineWidth = 2;
-    g.strokeRect(13, 13, cw - 26, ch - 26);
+    g.lineWidth = 4;
+    g.strokeRect(26, 26, cw - 52, ch - 52);
     const svg = MJ.tileFaceSVG(tileIndex);
     const img = new Image();
     tex = new T.CanvasTexture(cv);
-    tex.anisotropy = 4;
+    tex.anisotropy = 8;
     tex.encoding = T.sRGBEncoding;
     tex._ready = false;
     img.onload = () => {
-      g.drawImage(img, 14, 14, cw - 28, ch - 28);
+      g.drawImage(img, 28, 28, cw - 56, ch - 56);
       tex.needsUpdate = true;
       tex._ready = true;
     };
@@ -196,20 +211,15 @@
   /* ================= 麻将块 Mesh ================= */
 
   /**
-   * 双层六面体麻将块。
+   * 一体成型麻将块（单 Mesh 三材质组，无分层接缝）。
    * local：+z 为牌面法线、+y 为牌面「上」方向、y∈[0,厚]（底部贴桌面时用姿态四元数摆放）。
    */
   function makeTile(tileIndex, mats, MJ) {
-    const g = new T.Group();
-    const body = new T.Mesh(bodyGeo(), [mats.face(tileIndex), mats.sideIvory]);
-    body.position.z = SHELL_D - 0.02;
-    body.castShadow = true; body.receiveShadow = true;
-    const shell = new T.Mesh(shellGeo(), mats.sideShell);
-    shell.castShadow = true; shell.receiveShadow = true;
-    g.add(shell); g.add(body);
-    g.userData.tileIndex = tileIndex;
-    g.userData.body = body;
-    return g;
+    const m = new T.Mesh(tileGeo(), [mats.face(tileIndex), mats.sideIvory, mats.sideShell]);
+    m.castShadow = true; m.receiveShadow = true;
+    m.userData.tileIndex = tileIndex;
+    m.userData.body = m;      // 兼容旧接口（emissive 高亮走 body.material[0]）
+    return m;
   }
 
   /** 平铺（牌面朝上）：先翻平再绕世界 Y 转座位朝向 */
@@ -448,8 +458,8 @@
       this._buildCursor();
 
       /* ---- 材质库 ---- */
-      const sideIvory = new T.MeshStandardMaterial({ color: COL.ivory, roughness: 0.25, metalness: 0.05 });
-      const sideShell = new T.MeshStandardMaterial({ color: COL.shell, roughness: 0.18, metalness: 0.08 });
+      const sideIvory = new T.MeshStandardMaterial({ color: COL.ivory, roughness: 0.38, metalness: 0.03 });
+      const sideShell = new T.MeshStandardMaterial({ color: COL.shell, roughness: 0.3, metalness: 0.06 });
       const faceMatCache = new Map();
       this.mats = {
         sideIvory, sideShell,
@@ -457,7 +467,7 @@
           let m = faceMatCache.get(idx);
           if (!m) {
             m = new T.MeshStandardMaterial({
-              map: faceTexture(idx, MJ), roughness: 0.28, metalness: 0.04,
+              map: faceTexture(idx, MJ), roughness: 0.34, metalness: 0.03,
             });
             faceMatCache.set(idx, m);
           }
@@ -681,8 +691,11 @@
       opts = opts || {};
       const grp = this.groups[pid].hand;
       const yaw = SEAT_YAW[pid];
-      // 我方手牌面朝镜头(yaw 0)；AI 手牌牌背朝桌心 → 面朝外
-      const standYaw = pid === 0 ? 0 : yaw;
+      // 我方手牌面朝镜头(yaw 0)并后仰 HAND_TILT（雀魂风立体感，顶面朝桌心）；
+      // AI 手牌牌背朝桌心 → 面朝外
+      const standQuat = pid === 0
+        ? new T.Quaternion().setFromEuler(new T.Euler(-HAND_TILT, 0, 0))
+        : new T.Quaternion().setFromEuler(new T.Euler(0, yaw, 0));
       while (grp.children.length > tiles.length) {
         const m = grp.children.pop();
         killTweensOf(m.uuid);
@@ -696,7 +709,7 @@
           if (opts.animate) {
             const target = this.handSlot(pid, i, tiles.length);
             mesh.position.set(target.x, target.y + 6, target.z);
-            mesh.quaternion.setFromEuler(new T.Euler(0, standYaw, 0));
+            mesh.quaternion.copy(standQuat);
             tween(340, (k) => { mesh.position.y = target.y + 6 * (1 - k); }, {
               delay: i * 34, ease: easeOutCubic, tag: mesh.uuid,
             });
@@ -710,7 +723,7 @@
         }
         const target = this.handSlot(pid, i, tiles.length);
         if (!mesh.position.equals(target)) mesh.position.copy(target);
-        mesh.quaternion.setFromEuler(new T.Euler(0, standYaw, 0));
+        if (!mesh.quaternion.equals(standQuat)) mesh.quaternion.copy(standQuat);
         if (pid === 0) {
           mesh.userData.baseY = target.y;
           const m = mesh.userData.body.material[0];
@@ -904,7 +917,8 @@
       const carried = makeTile(tileIdx, this.mats, this.MJ);
       const q = FLAT_QUATS[pid];
       carried.position.copy(fromPos);
-      carried.quaternion.setFromEuler(new T.Euler(0, pid === 0 ? 0 : SEAT_YAW[pid], 0));
+      // 起飞姿态与站立姿态一致：我方后仰拈牌，AI 牌背朝桌心
+      carried.quaternion.setFromEuler(new T.Euler(pid === 0 ? -HAND_TILT : 0, pid === 0 ? 0 : SEAT_YAW[pid], 0));
       this.scene.add(carried);
       this.hands[pid].playDiscard({ fromPos, toPos, tileMesh: carried }, () => {
         this.scene.remove(carried);
