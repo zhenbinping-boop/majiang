@@ -460,6 +460,34 @@
       this.volume = 1;
       this._voice = undefined;
       this._voiceHooked = false;
+      /* 内置真人神经网络语音包（js/voice-data.js，Base64 data-URI，
+         file:// 零跨域）：预加载 HTMLAudioElement，零延迟播放 */
+      this._voiceAudios = {};
+      const data = (typeof global !== 'undefined') && global.MJ_VOICE_DATA;
+      if (data) {
+        Object.keys(data).forEach((key) => {
+          try {
+            const a = new Audio(data[key]);
+            a.preload = 'auto';
+            this._voiceAudios[key] = a;
+          } catch (e) { /* ignore */ }
+        });
+      }
+    }
+
+    /** 播放内置真人语音（chi/pong/kong/zimo/hu/ting）；资源缺失返回 false，
+        调用方自行回退 speechSynthesis。 */
+    playVoice(key) {
+      if (this.muted) return false;
+      const a = this._voiceAudios[key];
+      if (!a) return false;
+      try {
+        a.volume = Math.min(1, this.volume);
+        a.currentTime = 0;
+        const p = a.play();
+        if (p && p.catch) p.catch(() => {});
+        return true;
+      } catch (e) { return false; }
     }
     ensure() {
       if (!this.ctx) {
@@ -575,27 +603,38 @@
       this._noise(0.045, 2700, 1.7, 0.42);
       this._tone(783.99, 0.13, 0.1, 0.01, 'triangle');
       this._tone(1174.66, 0.2, 0.09, 0.075, 'triangle');
-      this.speak('吃', { pitch: 1.06, rate: 1.05 });
+      if (!this.playVoice('chi')) this.speak('吃', { pitch: 1.06, rate: 1.05 });
     }
     pong() {
       this._noise(0.05, 1900, 1.1, 0.5);
       this._noise(0.075, 1150, 0.9, 0.42, 'bandpass', 0.045);
       this._tone(196, 0.24, 0.16, 0, 'sine');
       this._tone(392, 0.18, 0.1, 0.05, 'triangle');
-      this.speak('碰', { pitch: 1.02, rate: 1.02 });
+      if (!this.playVoice('pong')) this.speak('碰', { pitch: 1.02, rate: 1.02 });
     }
     kong() {
       this._noise(0.09, 1500, 0.9, 0.55);
       this._noise(0.12, 640, 0.8, 0.5, 'bandpass', 0.06);
       this._tone(261.63, 0.3, 0.15, 0, 'sine');
       this._tone(392, 0.24, 0.1, 0.06, 'triangle');
-      this.speak('杠', { pitch: 0.98, rate: 1.0 });
+      if (!this.playVoice('kong')) this.speak('杠', { pitch: 0.98, rate: 1.0 });
     }
     win() {
       [523.25, 659.25, 783.99, 1046.5, 1318.51].forEach((f, i) => this._tone(f, 0.55, 0.11, i * 0.08, 'sine'));
       this._tone(1567.98, 0.7, 0.07, 0.42, 'triangle');
       this._noise(0.35, 5600, 0.8, 0.14, 'highpass', 0.02);
-      this.speak('胡啦', { pitch: 1.08, rate: 0.96, volume: 1.1 });
+      if (!this.playVoice('hu')) this.speak('胡啦', { pitch: 1.08, rate: 0.96, volume: 1.1 });
+    }
+    /** 自摸（独立于普通和牌的专属语音） */
+    zimo() {
+      [523.25, 659.25, 783.99, 1046.5, 1318.51].forEach((f, i) => this._tone(f, 0.55, 0.11, i * 0.08, 'sine'));
+      this._tone(1567.98, 0.7, 0.07, 0.42, 'triangle');
+      this._noise(0.35, 5600, 0.8, 0.14, 'highpass', 0.02);
+      if (!this.playVoice('zimo')) this.speak('自摸', { pitch: 1.08, rate: 0.98, volume: 1.1 });
+    }
+    /** 听牌播报 */
+    ting() {
+      if (!this.playVoice('ting')) this.speak('听牌', { pitch: 1.05, rate: 1.0 });
     }
     chime() {
       [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => this._tone(f, 0.5, 0.1, i * 0.09));

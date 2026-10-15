@@ -330,12 +330,14 @@
       const p = this.engine.players[0];
       this.$('me-info').innerHTML = this.seatInfoHTML(p);
       if (this.t3d) {
+        // 先 syncHand（更新 _handInfo）再 syncMelds —— 副露排版依赖最新手牌宽度
+        this.renderMyHand();
         this.t3d.syncMelds(0, p.melds);
-      } else {
-        const meldsBox = this.$('my-melds');
-        meldsBox.innerHTML = '';
-        p.melds.forEach(m => meldsBox.appendChild(this.meldEl(m, true)));
+        return;
       }
+      const meldsBox = this.$('my-melds');
+      meldsBox.innerHTML = '';
+      p.melds.forEach(m => meldsBox.appendChild(this.meldEl(m, true)));
       this.renderMyHand();
     }
 
@@ -648,6 +650,8 @@
         }, 1000);
       }
       bar.classList.remove('hidden');
+      // 操作栏入位 → 听牌浮窗上移让位（中央黄金带垂直错位分层）
+      document.querySelectorAll('.ting-tip').forEach(t => t.classList.add('above-actions'));
     }
 
     clearActionTimer() {
@@ -656,6 +660,7 @@
 
     hideActions() {
       this.$('action-bar').classList.add('hidden');
+      document.querySelectorAll('.ting-tip').forEach(t => t.classList.remove('above-actions'));
       this.clearActionTimer();
     }
 

@@ -43,11 +43,38 @@
   const GROUP_GAP = 0.3;                               // 副露组间距
 
   const COL = {
-    felt: 0x061528, feltHi: 0x0a2140,
-    wood: 0x6d4a22, gold: 0xd8b46c,
-    ivory: 0xf5eedc, shell: 0x9b2d1f,
-    compass: 0x0a0f26, compassRim: 0xd8b46c,
+    ivory: 0xf5eedc,
   };
+
+  /* ================= 主题皮肤（顶栏「🎨」切换，localStorage 持久化） =================
+     竹韵翡翠（默认推荐）/ 深海鎏金 / 紫檀玄金 —— 绒毡、木框、鎏金、牌背整套联动 */
+  const THEMES = {
+    jade: {
+      name: '竹韵翡翠',
+      feltIn: '#0c3b2e', feltOut: '#051d16',
+      wood: 0x4a2c1a, woodHi: 0x6b4226,
+      gold: 0xe5c168, shell: 0x9b2d1f, floor: 0x07090f,
+    },
+    ocean: {
+      name: '深海鎏金',
+      feltIn: '#0c1f3d', feltOut: '#050d1d',
+      wood: 0x211c16, woodHi: 0x3a2d20,
+      gold: 0xd8b46c, shell: 0xb03424, floor: 0x060811,
+    },
+    sandal: {
+      name: '紫檀玄金',
+      feltIn: '#1c1817', feltOut: '#0c0a09',
+      wood: 0x5d2417, woodHi: 0x7c3520,
+      gold: 0xe0b45c, shell: 0x1f7a4d, floor: 0x0a0806,
+    },
+  };
+  const THEME_ORDER = ['jade', 'ocean', 'sandal'];
+  let activeTheme = 'jade';
+  try {
+    const saved = global.localStorage && global.localStorage.getItem('mj-theme');
+    if (saved && THEMES[saved]) activeTheme = saved;
+  } catch (e) { /* ignore */ }
+  function theme() { return THEMES[activeTheme]; }
 
   /* 座位几何（相机视角）：0=我(南,屏幕下) 1=右家(东,右) 2=对家(北,上) 3=左家(西,左) */
   const SEAT_DIR = [                      // 桌心 → 座位（向外）单位向量
@@ -130,7 +157,12 @@
   let _tileGeo = null;
   function tileGeo() {
     if (_tileGeo) return _tileGeo;
-    const geo = extrudeRounded(TILE_W, TILE_H, TILE_R, TILE_D - BEVEL * 2, BEVEL);
+    const depth = TILE_D - BEVEL * 2;
+    const geo = extrudeRounded(TILE_W, TILE_H, TILE_R, depth, BEVEL);
+    // 挤出体 Z 轴居中（z ∈ [-depth/2, +depth/2]）：平躺 R_x(-90°) 后厚度
+    // 对称跨在原点两侧，position.y = TILE_D/2 即正好落在桌面，且暗杠
+    // rotateY(π) 翻面不会产生高度偏移
+    geo.translate(0, 0, -depth / 2);
     const pos = geo.attributes.position, nor = geo.attributes.normal, uv = geo.attributes.uv;
     // 正面（含倒角上半段）UV 归一到 0..1，供牌面贴图使用
     for (let i = 0; i < uv.count; i++) {
@@ -199,6 +231,92 @@
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
     faceTexCache.set(tileIndex, tex);
     return tex;
+  }
+
+  /* ---- 程序化织锦绒毡贴图（1024²）：径向聚光渐变 + 织物微噪 + 国风鎏金暗花 ----
+     桌面内腔 22.8×22.8 世界单位 → 1024px，px/单位 = 44.9：
+     手牌内侧 R=8.2 → 368px 鎏金回纹双圈内框（四角云雷拐角）；
+     罗盘外围 R=3.4 → 153px 暗金莲瓣底纹圈。 */
+  function makeFeltTextures() {
+    const th = theme();
+    const S = 1024, C = S / 2, PPU = S / 22.8;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    const g = cv.getContext('2d');
+    /* 径向聚光：中心暖润、四周深邃 */
+    const grad = g.createRadialGradient(C, C, S * 0.04, C, C, S * 0.6);
+    grad.addColorStop(0, th.feltIn);
+    grad.addColorStop(1, th.feltOut);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, S, S);
+    /* 织物微噪点（细密斜纹 + 随机纤维） */
+    g.globalAlpha = 0.05;
+    for (let i = -S; i < S * 2; i += 5) {
+      g.strokeStyle = '#ffffff';
+      g.beginPath(); g.moveTo(i, 0); g.lineTo(i + S, S); g.stroke();
+    }
+    for (let i = 0; i < 2600; i++) {
+      g.fillStyle = Math.random() > 0.5 ? '#ffffff' : '#000000';
+      g.fillRect(Math.random() * S, Math.random() * S, 1.4, 1.4);
+    }
+    g.globalAlpha = 1;
+    /* 国风鎏金暗花 */
+    const goldRing = (r, w, alpha) => {
+      g.strokeStyle = 'rgba(229, 193, 104, ' + alpha + ')';
+      g.lineWidth = w;
+      g.beginPath(); g.arc(C, C, r, 0, Math.PI * 2); g.stroke();
+    };
+    goldRing(8.2 * PPU, 3, 0.4);
+    goldRing(8.2 * PPU - 12, 1.6, 0.28);
+    goldRing(3.4 * PPU, 2.2, 0.3);
+    goldRing(3.4 * PPU + 10, 1.2, 0.2);
+    /* 回纹内框四角：云雷纹拐角（简化三层回字） */
+    const meander = (x, y, sx, sy) => {
+      g.strokeStyle = 'rgba(229, 193, 104, 0.34)';
+      g.lineWidth = 2;
+      const u = 9;
+      g.beginPath();
+      g.moveTo(x + sx * 0, y + sy * 0);
+      g.lineTo(x + sx * u * 3, y + sy * 0);
+      g.lineTo(x + sx * u * 3, y + sy * u * 2);
+      g.lineTo(x + sx * u, y + sy * u * 2);
+      g.lineTo(x + sx * u, y + sy * u);
+      g.lineTo(x + sx * u * 2, y + sy * u);
+      g.stroke();
+    };
+    const R8 = 8.2 * PPU;
+    meander(C - R8, C - R8, 1, 1);
+    meander(C + R8, C - R8, -1, 1);
+    meander(C - R8, C + R8, 1, -1);
+    meander(C + R8, C + R8, -1, -1);
+    /* 罗盘外围莲瓣底纹（16 瓣小弧） */
+    const R3 = 3.4 * PPU;
+    g.strokeStyle = 'rgba(229, 193, 104, 0.26)';
+    g.lineWidth = 2;
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2;
+      g.beginPath();
+      g.arc(C + Math.cos(a) * (R3 - 6), C + Math.sin(a) * (R3 - 6), 9, a + Math.PI * 0.4, a + Math.PI * 1.6);
+      g.stroke();
+    }
+    /* bump 图：同一噪点布局的灰度图（bumpScale 0.015 绒布纤维感） */
+    const bv = document.createElement('canvas');
+    bv.width = bv.height = 256;
+    const bg = bv.getContext('2d');
+    bg.fillStyle = '#808080';
+    bg.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 24000; i++) {
+      const v = 90 + Math.floor(Math.random() * 90);
+      bg.fillStyle = 'rgb(' + v + ',' + v + ',' + v + ')';
+      bg.fillRect(Math.random() * 256, Math.random() * 256, 1.2, 1.2);
+    }
+    const map = new T.CanvasTexture(cv);
+    map.encoding = T.sRGBEncoding;
+    map.anisotropy = 8;
+    const bump = new T.CanvasTexture(bv);
+    bump.wrapS = bump.wrapT = T.RepeatWrapping;
+    bump.repeat.set(6, 6);
+    return { map, bump };
   }
 
   /* ================= 麻将块 Mesh ================= */
@@ -292,9 +410,9 @@
       this._buildGroups();
       this._buildCursor();
 
-      /* ---- 材质库 ---- */
+      /* ---- 材质库（牌背壳色随主题联动） ---- */
       const sideIvory = new T.MeshStandardMaterial({ color: COL.ivory, roughness: 0.38, metalness: 0.03 });
-      const sideShell = new T.MeshStandardMaterial({ color: COL.shell, roughness: 0.3, metalness: 0.06 });
+      const sideShell = new T.MeshStandardMaterial({ color: theme().shell, roughness: 0.3, metalness: 0.06 });
       const faceMatCache = new Map();
       this.mats = {
         sideIvory, sideShell,
@@ -354,72 +472,112 @@
     }
 
     _buildTable() {
-      // 绒布桌面（大圆角矩形：足够覆盖任何宽高比下的相机视锥落地面）
-      const FW = 76, FD = 46, ZC = -4;
-      const feltGeo = extrudeRounded(FW, FD, 4, 0.8, 0.3);
-      feltGeo.rotateX(-Math.PI / 2);
-      const felt = new T.Mesh(feltGeo, new T.MeshStandardMaterial({
-        color: COL.felt, roughness: 0.95, metalness: 0,
-      }));
-      felt.position.set(0, -0.8, ZC);
+      const th = theme();
+      /* 「紫檀鎏金」立体家具感：桌面内腔 22.8×22.8（R_IN=11.4，环绕四家
+         手牌外沿），四周紫檀斜切实木桌框 + 鎏金压条 + 四角黄铜包角，
+         框外深邃雅室地面 —— 整桌轮廓尽收镜头 */
+      const R_IN = 11.4, BW = 1.45, BH = 0.55;
+      /* 织锦绒毡桌面（程序化纹理 + bump） */
+      const tex = makeFeltTextures();
+      const feltMat = new T.MeshStandardMaterial({
+        map: tex.map, bumpMap: tex.bump, bumpScale: 0.015,
+        roughness: 0.92, metalness: 0,
+      });
+      const felt = new T.Mesh(new T.PlaneGeometry(R_IN * 2, R_IN * 2), feltMat);
+      felt.rotation.x = -Math.PI / 2;
+      felt.position.y = 0.005;
       felt.receiveShadow = true;
       this.scene.add(felt);
-      // 中心的亮一圈（渐变高光贴片）
-      const hi = new T.Mesh(
-        new T.CircleGeometry(9, 48),
-        new T.MeshBasicMaterial({ color: COL.feltHi, transparent: true, opacity: 0.32 }));
-      hi.rotation.x = -Math.PI / 2;
-      hi.position.y = 0.012;
-      this.scene.add(hi);
-      // 鎏金木质边框（四条）
-      const woodMat = new T.MeshStandardMaterial({ color: COL.wood, roughness: 0.42, metalness: 0.25 });
-      const rimMat = new T.MeshStandardMaterial({ color: COL.gold, roughness: 0.3, metalness: 0.6 });
-      const bw = 1.7, bh = 1.1;
-      const hx = FW / 2 + bw / 2;
-      const zN = ZC - (FD / 2 + bw / 2), zS = ZC + (FD / 2 + bw / 2);
-      [[0, zN, FW + bw * 2, bw], [0, zS, FW + bw * 2, bw]].forEach(([x, z, w, d]) => {
-        const m = new T.Mesh(new T.BoxGeometry(w, bh, d), woodMat);
-        m.position.set(x, bh / 2 - 0.9, z);
+      this._feltMat = feltMat;
+      /* 桌面基座墩（绒毡下的厚台面，边缘被桌框压住）。
+         注意：ExtrudeGeometry 带倒角总厚 = depth + 2*bevel = 1.1，
+         几何 z 跨 [-bevel, depth+bevel] = [-0.2, 0.9]，R_x(-90°) 后 y 跨同值 ——
+         position.y 必须取 -(depth+bevel) = -0.9 才能让顶面正好落在 y=0，
+         否则顶面抬到 0.48 会把整张绒毡平面（y=0.005）罩进实体内部。 */
+      const baseGeo = extrudeRounded(R_IN * 2 + 0.6, R_IN * 2 + 0.6, 1.2, 0.7, 0.2);
+      baseGeo.rotateX(-Math.PI / 2);
+      this._baseMat = new T.MeshStandardMaterial({
+        color: parseInt(th.feltOut.slice(1), 16),
+        roughness: 0.9, metalness: 0,
+      });
+      const base = new T.Mesh(baseGeo, this._baseMat);
+      base.position.y = -0.9;
+      this.scene.add(base);
+      /* 紫檀实木桌框（四条 + 顶面高光条） */
+      const woodMat = new T.MeshStandardMaterial({ color: th.wood, roughness: 0.25, metalness: 0.15 });
+      const woodHiMat = new T.MeshStandardMaterial({ color: th.woodHi, roughness: 0.2, metalness: 0.2 });
+      const goldMat = new T.MeshStandardMaterial({ color: th.gold, roughness: 0.2, metalness: 0.85 });
+      this._woodMat = woodMat; this._woodHiMat = woodHiMat; this._goldMat = goldMat;
+      const L = R_IN + BW;                     // 框中线距桌心
+      const mk = (w, dpt, x, z) => {
+        const m = new T.Mesh(new T.BoxGeometry(w, BH, dpt), woodMat);
+        m.position.set(x, BH / 2 - 0.35, z);
         m.castShadow = true; m.receiveShadow = true;
         this.scene.add(m);
-        const trim = new T.Mesh(new T.BoxGeometry(w * 0.99, 0.2, 0.3), rimMat);
-        trim.position.set(x, bh - 0.72, z + (z > ZC ? -d / 2 - 0.05 : d / 2 + 0.05));
-        this.scene.add(trim);
-      });
-      [[-hx, ZC, bw, FD], [hx, ZC, bw, FD]].forEach(([x, z, w, d]) => {
-        const m = new T.Mesh(new T.BoxGeometry(w, bh, d), woodMat);
-        m.position.set(x, bh / 2 - 0.9, z);
-        m.castShadow = true; m.receiveShadow = true;
+        const cap = new T.Mesh(new T.BoxGeometry(w * 0.96, 0.1, dpt * 0.96), woodHiMat);
+        cap.position.set(x, BH - 0.33, z);
+        this.scene.add(cap);
+        return m;
+      };
+      mk(R_IN * 2 + BW * 2, BW, 0, -(L));      // 北
+      mk(R_IN * 2 + BW * 2, BW, 0, L);         // 南
+      mk(BW, R_IN * 2, -L, 0);                 // 西
+      mk(BW, R_IN * 2, L, 0);                  // 东
+      /* 鎏金压条：贴桌框内缘一圈 */
+      const trim = (w, dpt, x, z) => {
+        const m = new T.Mesh(new T.BoxGeometry(w, 0.09, dpt), goldMat);
+        m.position.set(x, BH - 0.36, z);
         this.scene.add(m);
-        const trim = new T.Mesh(new T.BoxGeometry(0.3, 0.2, d * 0.99), rimMat);
-        trim.position.set(x + (x > 0 ? -w / 2 - 0.05 : w / 2 + 0.05), bh - 0.72, z);
-        this.scene.add(trim);
+      };
+      trim(R_IN * 2 + 0.12, 0.1, 0, -(R_IN + 0.05));
+      trim(R_IN * 2 + 0.12, 0.1, 0, R_IN + 0.05);
+      trim(0.1, R_IN * 2 + 0.12, -(R_IN + 0.05), 0);
+      trim(0.1, R_IN * 2 + 0.12, R_IN + 0.05, 0);
+      /* 四角立体雕花黄铜包角 */
+      const guardGeo = new T.BoxGeometry(BW + 0.25, BH + 0.18, BW + 0.25);
+      [[-L, -L], [L, -L], [-L, L], [L, L]].forEach(([x, z]) => {
+        const gm = new T.Mesh(guardGeo, goldMat);
+        gm.position.set(x, (BH + 0.18) / 2 - 0.35, z);
+        gm.castShadow = true;
+        this.scene.add(gm);
+        const stud = new T.Mesh(new T.SphereGeometry(0.16, 12, 10), goldMat);
+        stud.position.set(x, BH + 0.02, z);
+        this.scene.add(stud);
       });
+      /* 框外雅室地面（深邃暗色，雾色联动主题） */
+      const floorMat = new T.MeshStandardMaterial({ color: th.floor, roughness: 0.98, metalness: 0 });
+      const floor = new T.Mesh(new T.PlaneGeometry(240, 240), floorMat);
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = -1.15;
+      this.scene.add(floor);
+      this._floorMat = floorMat;
+      if (this.scene.fog) this.scene.fog.color.setHex(th.floor);
     }
 
     /* ---- 中央八角罗盘：整体绘制在 512×512 CanvasTexture 上 ----
        中心圆盘两行（局数 / 余牌）+ 四内缘扇区座风字（各自朝向对应座位，
        当前出牌方鎏金发光，其余暗金）—— 同一平面精确排版，绝不重叠。 */
     _buildCompass() {
+      const th = theme();
       const g = new T.Group();
       const oct = { thetaStart: Math.PI / 8 };   // 八角边面向四家
       const rim = new T.Mesh(
         new T.CylinderGeometry(R_COMPASS + 0.18, R_COMPASS + 0.35, 0.5, 8, 1, false, oct.thetaStart),
-        new T.MeshStandardMaterial({ color: COL.compassRim, roughness: 0.3, metalness: 0.7 }));
+        new T.MeshStandardMaterial({ color: th.gold, roughness: 0.22, metalness: 0.8 }));
       rim.position.y = 0.1;
       rim.receiveShadow = true;
       g.add(rim);
       const plate = new T.Mesh(
         new T.CylinderGeometry(R_COMPASS, R_COMPASS, 0.42, 8, 1, false, oct.thetaStart),
-        new T.MeshStandardMaterial({ color: COL.compass, roughness: 0.35, metalness: 0.4 }));
+        new T.MeshStandardMaterial({ color: 0x0a0d1c, roughness: 0.18, metalness: 0.55 }));
       plate.position.y = 0.14;
       plate.receiveShadow = true;
       g.add(plate);
       this._compassCv = document.createElement('canvas');
-      this._compassCv.width = this._compassCv.height = 512;
+      this._compassCv.width = this._compassCv.height = 1024;
       this._compassTex = new T.CanvasTexture(this._compassCv);
       this._compassTex.encoding = T.sRGBEncoding;
-      this._compassTex.anisotropy = 4;
+      this._compassTex.anisotropy = 8;
       const top = new T.Mesh(
         new T.PlaneGeometry(R_COMPASS * 2, R_COMPASS * 2),
         new T.MeshBasicMaterial({ map: this._compassTex, transparent: true }));
@@ -448,8 +606,13 @@
     _drawCompass() {
       const cv = this._compassCv;
       if (!cv) return;
+      const th = theme();
       const g = cv.getContext('2d');
-      const W = 512, C = 256, R = 250;
+      const W = 1024, C = 512, R = 500;
+      const gold = (a) => {
+        const c = new T.Color(th.gold);
+        return 'rgba(' + Math.round(c.r * 255) + ',' + Math.round(c.g * 255) + ',' + Math.round(c.b * 255) + ',' + a + ')';
+      };
       g.clearRect(0, 0, W, W);
       // 八角盘面（边面向四家：顶点在 22.5°+k·45°）
       g.beginPath();
@@ -459,46 +622,67 @@
         if (k) g.lineTo(x, y); else g.moveTo(x, y);
       }
       g.closePath();
-      g.fillStyle = 'rgba(7,11,28,0.96)';
+      g.fillStyle = 'rgba(6,9,24,0.97)';
       g.fill();
-      g.strokeStyle = 'rgba(216,180,108,0.85)';
-      g.lineWidth = 5;
+      g.strokeStyle = gold(0.9);
+      g.lineWidth = 9;
       g.stroke();
-      // 电子网格 + 同心环（裁剪在八角内）
+      // 裁剪在八角内：金属拉丝底纹（同心细弧）+ 电子网格
       g.save();
       g.clip();
-      g.strokeStyle = 'rgba(120,160,220,0.14)';
-      g.lineWidth = 1;
-      for (let i = -R + 26; i < R; i += 26) {
+      g.strokeStyle = 'rgba(190,205,235,0.05)';
+      g.lineWidth = 1.4;
+      for (let r = 40; r < R; r += 11) {
+        g.beginPath(); g.arc(C, C, r, 0, Math.PI * 2); g.stroke();
+      }
+      g.strokeStyle = 'rgba(120,160,220,0.12)';
+      g.lineWidth = 1.6;
+      for (let i = -R + 52; i < R; i += 52) {
         g.beginPath(); g.moveTo(C + i, C - R); g.lineTo(C + i, C + R); g.stroke();
         g.beginPath(); g.moveTo(C - R, C + i); g.lineTo(C + R, C + i); g.stroke();
       }
-      g.strokeStyle = 'rgba(216,180,108,0.4)';
-      g.lineWidth = 2.5;
-      g.beginPath(); g.arc(C, C, 208, 0, Math.PI * 2); g.stroke();
-      g.beginPath(); g.arc(C, C, 160, 0, Math.PI * 2); g.stroke();
+      g.strokeStyle = gold(0.4);
+      g.lineWidth = 5;
+      g.beginPath(); g.arc(C, C, 416, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.arc(C, C, 320, 0, Math.PI * 2); g.stroke();
+      // 行动方扇区整格泛金光渐变（45° 扇区，环带 320..470）
+      const act = this._compassTurn;
+      if (act >= 0 && act < 4) {
+        const center = [Math.PI, Math.PI / 2, 0, -Math.PI / 2][act];  // canvas 角
+        const a0 = center - Math.PI / 8, a1 = center + Math.PI / 8;
+        const grad = g.createRadialGradient(C, C, 300, C, C, 480);
+        grad.addColorStop(0, 'rgba(255,205,100,0)');
+        grad.addColorStop(0.75, 'rgba(255,205,100,0.20)');
+        grad.addColorStop(1, 'rgba(255,205,100,0)');
+        g.fillStyle = grad;
+        g.beginPath();
+        g.arc(C, C, 480, a0 - Math.PI / 2, a1 - Math.PI / 2);
+        g.arc(C, C, 300, a1 - Math.PI / 2, a0 - Math.PI / 2, true);
+        g.closePath();
+        g.fill();
+      }
       g.restore();
       // 中心圆盘：两行文字（局数 / 余牌）
-      g.beginPath(); g.arc(C, C, 118, 0, Math.PI * 2);
-      g.fillStyle = 'rgba(12,18,44,0.92)';
+      g.beginPath(); g.arc(C, C, 236, 0, Math.PI * 2);
+      g.fillStyle = 'rgba(10,14,36,0.94)';
       g.fill();
-      g.strokeStyle = 'rgba(216,180,108,0.55)';
-      g.lineWidth = 3;
+      g.strokeStyle = gold(0.6);
+      g.lineWidth = 6;
       g.stroke();
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillStyle = '#ffe9b0';
-      g.font = '700 52px "STKaiti","KaiTi","Kaiti SC",serif';
-      g.fillText(this._compassL1 || '东一局', C, C - 27);
+      g.font = '700 104px "STKaiti","KaiTi","Kaiti SC",serif';
+      g.fillText(this._compassL1 || '东一局', C, C - 54);
       g.fillStyle = 'rgba(245,239,221,0.75)';
-      g.font = '600 33px "STKaiti","KaiTi","Kaiti SC",serif';
-      g.fillText(this._compassL2 || '余 83 张', C, C + 35);
+      g.font = '600 66px "STKaiti","KaiTi","Kaiti SC",serif';
+      g.fillText(this._compassL2 || '余 83 张', C, C + 70);
       // 四内缘座风字：各自朝向对应座位（canvas 上=北/对家，右=东/右家）
       const winds = this._compassWinds || ['东', '南', '西', '北'];
       const pos = [
-        [C, C + 192, Math.PI],        // pid0 南：字顶朝 +Z（canvas 下）→ 转 180°
-        [C + 192, C, Math.PI / 2],    // pid1 东：字顶朝 +X（canvas 右）→ 转 +90°
-        [C, C - 192, 0],              // pid2 北：字顶朝 -Z（canvas 上）
-        [C - 192, C, -Math.PI / 2],   // pid3 西：字顶朝 -X（canvas 左）→ 转 -90°
+        [C, C + 384, Math.PI],        // pid0 南：字顶朝 +Z（canvas 下）→ 转 180°
+        [C + 384, C, Math.PI / 2],    // pid1 东：字顶朝 +X（canvas 右）→ 转 +90°
+        [C, C - 384, 0],              // pid2 北：字顶朝 -Z（canvas 上）
+        [C - 384, C, -Math.PI / 2],   // pid3 西：字顶朝 -X（canvas 左）→ 转 -90°
       ];
       for (let pid = 0; pid < 4; pid++) {
         const [x, y, rot] = pos[pid];
@@ -506,14 +690,14 @@
         g.save();
         g.translate(x, y);
         g.rotate(rot);
-        g.font = '700 64px "STKaiti","KaiTi","Kaiti SC",serif';
+        g.font = '700 128px "STKaiti","KaiTi","Kaiti SC",serif';
         if (active) {
           g.shadowColor = 'rgba(255,200,90,0.95)';
-          g.shadowBlur = 26;
+          g.shadowBlur = 52;
           g.fillStyle = '#ffe9b0';
         } else {
           g.shadowBlur = 0;
-          g.fillStyle = 'rgba(216,180,108,0.42)';
+          g.fillStyle = gold(0.42);
         }
         g.fillText(winds[pid] || '东', 0, 0);
         g.restore();
@@ -533,7 +717,7 @@
 
     _buildCursor() {
       const mat = new T.MeshStandardMaterial({
-        color: COL.gold, emissive: 0xaa7a20, emissiveIntensity: 0.9,
+        color: theme().gold, emissive: 0xaa7a20, emissiveIntensity: 0.9,
         roughness: 0.25, metalness: 0.7,
       });
       this.cursor = new T.Mesh(new T.ConeGeometry(0.4, 0.8, 4), mat);
@@ -568,16 +752,21 @@
         t.z * along + d.z * out);
     }
 
-    /** 手牌第 i 张立牌坐标（从左到右升序；摸牌在最右并留 DRAW_GAP 间距） */
+    /** 手牌第 i 张立牌坐标（从左到右升序；摸牌固定最右并留 DRAW_GAP 间距。
+        fresh 及其右侧全部让位 —— 即便引擎尚未理牌也不会发生重叠。
+        我方立牌前倾（牌面指向高机位），厚度居中后竖向半跨 0.618，
+        y=0.64 恰使牌底贴桌（0.02）；AI 立牌后仰，y=TILE_H/2 微沉即可。 */
     handSlot(pid, i, count) {
       const t = TAN[pid], d = SEAT_DIR[pid];
       const L = this._seatLayout(pid);
       const fresh = (this._handInfo[pid] || {}).fresh;
-      const along = L.start + TILE_W / 2 + i * HAND_PITCH + (i === fresh ? DRAW_GAP : 0);
+      const along = L.start + TILE_W / 2 + i * HAND_PITCH
+        + (fresh >= 0 && i >= fresh ? DRAW_GAP : 0);
       const base = R_HAND + TILE_D / 2;
+      const ty = pid === 0 ? 0.64 : TILE_H / 2 + 0.02;
       return new T.Vector3(
         t.x * along + d.x * base,
-        TILE_H / 2 + 0.02,
+        ty,
         t.z * along + d.z * base);
     }
 
@@ -704,8 +893,10 @@
       }
     }
 
-    /** 副露同步：与手牌同一条桌沿基准线（手牌左、副露右）；平躺只绕 Y 旋转，
-        被鸣牌额外转 90° 并偏移对齐；暗杠两端翻面（牌背朝上） */
+    /** 副露同步：与手牌同一条桌沿基准线（手牌左、副露右）。
+        被鸣牌绕局部 Z 轴（牌面法线 = 世界 +Y）横置 90° —— 花色面永远朝上，
+        绝不侧翻成白块；横置牌沿桌沿占用宽度变为 TILE_H，用精确游标累加，
+        杜绝与邻牌穿模。暗杠两端 rotateY(π) 翻面（牌背朝上、高度不变）。 */
     syncMelds(pid, melds) {
       const grp = this.groups[pid].meld;
       const q = FLAT_QUATS[pid];
@@ -715,11 +906,14 @@
         grp.remove(m);
       }
       const t = TAN[pid], d = SEAT_DIR[pid];
-      const base = R_HAND + TILE_D / 2;
-      const total = melds.reduce((s, m) => {
-        const cl = (m.from >= 0 && m.tiles.indexOf(m.tile) >= 0) ? 0.25 : 0;
-        return s + m.tiles.length * HAND_PITCH + cl;
-      }, 0) + Math.max(0, melds.length - 1) * GROUP_GAP;
+      /* 精确游标：每张牌按实际占地（横置 TILE_H / 竖放 TILE_W）+ GAP 累加 */
+      const meldSpan = (m) => {
+        const claimedIdx = m.from >= 0 ? m.tiles.indexOf(m.tile) : -1;
+        return m.tiles.reduce((s, _, k) => s + (k === claimedIdx ? TILE_H : TILE_W), 0)
+          + Math.max(0, m.tiles.length - 1) * GAP;
+      };
+      const total = melds.reduce((s, m) => s + meldSpan(m), 0)
+        + Math.max(0, melds.length - 1) * GROUP_GAP;
       this._meldInfo[pid] = { total };
       grp.userData.groupCount = melds.length;
       // 吃/碰/杠聚拢动画（playClaim 标记 → 本次重建的牌错峰落入）
@@ -733,17 +927,21 @@
         const claimedIdx = m.from >= 0 ? m.tiles.indexOf(m.tile) : -1;
         const isConcealedKong = m.kind === 'concealed_kong' ||
           (m.tiles.length === 4 && m.from < 0 && !m.added);
-        let extra = 0;
+        let cursor = acc;
         m.tiles.forEach((tIdx, k) => {
           const claimed = k === claimedIdx;
           const faceDown = isConcealedKong && (k === 0 || k === 3);
+          const span = claimed ? TILE_H : TILE_W;
+          const along = cursor + span / 2;
+          cursor += span + GAP;
+          // 横置牌径向占地变窄（TILE_W），沿 SEAT_DIR 微移使其底边与竖放牌平齐
+          const depthOff = claimed ? (TILE_H - TILE_W) / 2 : 0;
+          const base = R_HAND + TILE_D / 2 - depthOff;
+          const ty = TILE_D / 2 + 0.02;
           const mesh = makeTile(tIdx, this.mats, this.MJ);
           mesh.quaternion.copy(q);
-          if (claimed) { mesh.rotateY(Math.PI / 2); claimedCount++; }  // 横置 90°（顶面仍朝上）
-          if (faceDown) mesh.rotateX(Math.PI);                         // 暗杠两端牌背朝上
-          const along = acc + TILE_W / 2 + extra + k * HAND_PITCH
-            + (claimed ? (TILE_H - TILE_W) / 2 * 0.7 : 0);
-          const ty = TILE_D / 2 + 0.02;
+          if (claimed) { mesh.rotateZ(Math.PI / 2); claimedCount++; }  // 绕牌面法线横置：顶面仍朝上
+          if (faceDown) mesh.rotateY(Math.PI);                         // 绕长轴翻面：牌背朝上
           mesh.position.set(t.x * along + d.x * base, ty, t.z * along + d.z * base);
           if (pulse) {
             mesh.position.y = ty + 0.9;
@@ -752,11 +950,9 @@
             });
           }
           grp.add(mesh);
-          if (claimed) extra += 0.25;
           idx++;
         });
-        acc += m.tiles.length * HAND_PITCH
-          + (claimedIdx >= 0 ? 0.25 : 0) + GROUP_GAP;
+        acc = cursor - GAP + GROUP_GAP;
       });
       grp.userData.claimedCount = claimedCount;
     }
@@ -837,6 +1033,39 @@
       this._compassL2 = line2 || '';
       if (winds && winds.length === 4) this._compassWinds = winds.slice();
       this._drawCompass();
+    }
+
+    /* ---------- 主题皮肤 ---------- */
+
+    /** 切换雀桌皮肤：绒毡重绘 + 木框/鎏金/牌背/雾色联动 + localStorage 持久化 */
+    setTheme(name) {
+      if (!THEMES[name]) return false;
+      activeTheme = name;
+      try { global.localStorage.setItem('mj-theme', name); } catch (e) { /* ignore */ }
+      const th = theme();
+      if (this._woodMat) this._woodMat.color.setHex(th.wood);
+      if (this._woodHiMat) this._woodHiMat.color.setHex(th.woodHi);
+      if (this._goldMat) this._goldMat.color.setHex(th.gold);
+      if (this._floorMat) this._floorMat.color.setHex(th.floor);
+      if (this._baseMat) this._baseMat.color.setHex(parseInt(th.feltOut.slice(1), 16));
+      if (this.scene.fog) this.scene.fog.color.setHex(th.floor);
+      if (this.mats) this.mats.sideShell.color.setHex(th.shell);
+      if (this._feltMat) {
+        const tex = makeFeltTextures();
+        this._feltMat.map = tex.map;
+        this._feltMat.bumpMap = tex.bump;
+        this._feltMat.needsUpdate = true;
+      }
+      this._drawCompass();
+      return true;
+    }
+
+    /** 循环切换到下一套皮肤，返回其显示名 */
+    cycleTheme() {
+      const idx = THEME_ORDER.indexOf(activeTheme);
+      const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
+      this.setTheme(next);
+      return THEMES[next].name;
     }
 
     /* ---------- 纯麻将块补间动画（无手部模型） ---------- */
@@ -1128,6 +1357,13 @@
         try { console.warn('table3d 初始化失败，回退平面渲染:', e && e.message); } catch (_) {}
         return null;
       }
+    },
+    /** 可用皮肤清单（供 🎨 按钮提示） */
+    themeList() {
+      return THEME_ORDER.map((id) => ({ id, name: THEMES[id].name }));
+    },
+    currentTheme() {
+      return activeTheme;
     },
   };
 

@@ -57,6 +57,17 @@
         if (!ui.sound.muted) ui.sound.tick();
       });
       ui.$('btn-rules').addEventListener('click', () => ui.showRules());
+      const themeBtn = ui.$('btn-theme');
+      if (themeBtn) {
+        themeBtn.addEventListener('click', () => {
+          ui.sound.tick();
+          if (ui.t3d && ui.t3d.cycleTheme) {
+            ui.toast('雀桌皮肤 · ' + ui.t3d.cycleTheme());
+          } else {
+            ui.toast('皮肤切换需 WebGL 3D 牌桌');
+          }
+        });
+      }
       ui.$('btn-restart').addEventListener('click', () => this.confirmRestart());
       const home = ui.$('btn-home');
       if (home) home.addEventListener('click', () => this.confirmHome());
@@ -336,8 +347,8 @@
       const { result, payments, winTile } = this.engine.settleWin(winner, opts);
       this.engine.updateTenpaiFlags();
       this.ui.renderAll();
-      // 胡牌音效与浮字，先给玩家一个明确的“胡了”反馈再弹结算
-      this.ui.sound.win();
+      // 胡牌音效与浮字，先给玩家一个明确的“胡了”反馈再弹结算（自摸专属语音）
+      if (opts.selfDraw) this.ui.sound.zimo(); else this.ui.sound.win();
       this.ui.flash('胡', 'win');
       await delay(820);
       const data = {

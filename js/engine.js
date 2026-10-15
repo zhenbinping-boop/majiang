@@ -530,8 +530,9 @@
     drawTile(player, replacement = false) {
       const t = replacement ? this.dead.shift() : this.wall.shift();
       if (t === undefined) return null;
+      // 摸牌不排序：新牌天然落在手牌数组末尾（最右侧），还原真实麻将
+      // 「摸牌搁在最右、出牌后理牌」的体验；freshIdx 恒为 hand.length-1
       player.hand.push(t);
-      player.hand = sortTiles(player.hand);
       player.lastDraw = t;
       player.lastDrawWasReplacement = !!replacement;
       player.lastDrawWasLast = !replacement && this.wall.length === 0;
@@ -566,6 +567,7 @@
       const idx = player.hand.indexOf(tile);
       if (idx === -1) throw new Error('弃牌不在手牌中: ' + tile);
       player.hand.splice(idx, 1);
+      player.hand = sortTiles(player.hand);   // 出牌后理牌（摸牌时保持原位）
       player.discards.push(tile);
       this.lastDiscard = tile;
       this.lastDiscarder = player.id;

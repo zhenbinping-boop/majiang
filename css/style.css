@@ -701,12 +701,13 @@ html, body {
 #my-melds { justify-content: center; min-height: 4px; }
 #my-melds:empty { display: none; }
 
-/* ---- 听牌实时预览浮条 (固定屏幕左下角：我方信息胶囊正上方，不遮手牌/牌河) ---- */
+/* ---- 听牌实时预览浮条（屏幕正中央黄金视觉带：action-bar 上方 12px，
+     操作栏隐藏时落位其槽位 —— 始终处于视线正中，绝不遮手牌/牌河） ---- */
 .ting-tip {
   position: absolute;
-  bottom: 96px;
-  left: 16px;
-  transform: none;
+  bottom: clamp(114px, 21vh, 146px);
+  left: 50%;
+  transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -719,7 +720,10 @@ html, body {
   pointer-events: none;
   white-space: nowrap;
   max-width: 94vw;
+  transition: bottom .18s ease;
 }
+/* 操作栏显示时：听牌浮窗平滑上移至其正上方 12px */
+.ting-tip.above-actions { bottom: clamp(176px, 31vh, 214px); }
 .ting-tip.hidden { display: none; }
 .ting-label {
   font-size: 11.5px;
@@ -1082,28 +1086,44 @@ html, body {
 #action-flash.k-win  { color: #fff6d8; font-size: 76px; text-shadow: 0 0 26px rgba(255, 215, 120, 1), 0 0 60px rgba(255, 180, 60, .8), 0 4px 16px rgba(0, 0, 0, .9); }
 
 /* =========== 操作栏 =========== */
-/* 固定右下角，与左下角听牌提示左右分置，完全避开底部中央手牌 */
+/* 屏幕正中央黄金视觉带（我方手牌正上方）：玩家盯牌桌中央时余光必达，
+   与下方手牌、上方牌河互不遮挡 */
 #action-bar {
-  position: absolute; right: 20px; bottom: 110px; left: auto;
-  transform: none;
-  display: flex; gap: 8px; z-index: 40;
-  background: rgba(9, 13, 34, 0.94);
-  border: 1px solid var(--gold);
+  position: absolute;
+  left: 50%;
+  right: auto;
+  bottom: clamp(114px, 21vh, 148px);
+  transform: translateX(-50%);
+  display: flex; flex-direction: row; flex-wrap: nowrap;
+  align-items: center; justify-content: center;
+  gap: 12px; z-index: 50;
+  padding: 8px 18px;
   border-radius: 999px;
-  padding: 7px 12px;
-  box-shadow: 0 8px 28px rgba(0,0,0,.6), 0 0 22px rgba(216, 180, 108, .28);
+  background: linear-gradient(180deg, rgba(16, 24, 58, 0.96), rgba(8, 12, 30, 0.98));
+  border: 1.5px solid #f4e0ac;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.75), 0 0 28px rgba(255, 200, 90, 0.45);
+  white-space: nowrap;
   animation: bar-in .25s ease;
-  max-width: 96vw; flex-wrap: wrap; justify-content: center;
+  max-width: 96vw;
 }
-@keyframes bar-in { from { transform: translateY(12px); opacity: 0; } }
+@keyframes bar-in { from { transform: translateX(-50%) translateY(12px); opacity: 0; } }
 #action-bar.hidden { display: none; }
 .act-btn {
   border: none; border-radius: 999px;
-  padding: 8px 16px; font-size: 15px; font-weight: 700; letter-spacing: 2px;
+  padding: 9px 22px; font-size: 17px; font-weight: 700; letter-spacing: 2px;
+  min-width: 68px;
   cursor: pointer; transition: all .15s; color: #14172b;
   font-family: "STKaiti", "KaiTi", "PingFang SC", sans-serif;
   background: linear-gradient(180deg, var(--gold-lt), var(--gold));
   box-shadow: 0 3px 0 var(--gold-deep), 0 4px 10px rgba(0,0,0,.4);
+}
+/* 「和 / 碰 / 杠 / 吃」流光脉冲边框：弹出第一时间抓住视线 */
+.act-btn:not(.pass):not([disabled]) {
+  animation: act-pulse 1.15s ease-in-out infinite;
+}
+@keyframes act-pulse {
+  0%, 100% { box-shadow: 0 3px 0 var(--gold-deep), 0 4px 10px rgba(0,0,0,.4), 0 0 0 0 rgba(255, 208, 100, 0.75); }
+  50%      { box-shadow: 0 3px 0 var(--gold-deep), 0 4px 10px rgba(0,0,0,.4), 0 0 0 9px rgba(255, 208, 100, 0); }
 }
 .act-btn:hover { filter: brightness(1.1); }
 .act-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--gold-deep); }
@@ -1247,8 +1267,8 @@ html, body {
   .river-n, .river-s { width: calc(6 * (var(--rv-w) + var(--rv-gap)) - var(--rv-gap)); }
   .river-w, .river-e { width: calc(4 * (var(--rv-w) + var(--rv-gap)) - var(--rv-gap)); }
   .brand-name { display: none; }
-  #action-bar { bottom: 88px; padding: 6px 9px; gap: 6px; }
-  .act-btn { padding: 7px 12px; font-size: 14px; }
+  #action-bar { padding: 6px 10px; gap: 6px; bottom: clamp(112px, 20vh, 138px); }
+  .act-btn { padding: 7px 13px; font-size: 14px; min-width: 52px; }
   .modal { padding: 16px; }
   #action-flash { font-size: 48px; }
   #action-flash.k-win { font-size: 58px; }
@@ -1397,12 +1417,10 @@ html, body {
     font-size: 11px; padding: 2px 12px; min-height: 20px;
     max-width: 90%; overflow: hidden; text-overflow: ellipsis;
   }
-  /* 操作栏：统一坐标系下就是一条水平胶囊，落在手牌右上方黄金触控区。
-     bottom 用「牌托高 + 12」而非「牌面高 + 22」——牌托顶部在牌面之上约 4px，
-     再加 12px 间隙，确保与手牌牌面之间有干净的空白带，绝不压牌。 */
+  /* 操作栏：统一坐标系下保持屏幕正中央黄金视觉带，仅收紧尺寸 */
   #action-bar {
-    bottom: calc(var(--tile-h) + 26px); right: 12px; left: auto; transform: none;
-    padding: 5px 9px; gap: 6px;
+    bottom: clamp(112px, 20vh, 138px);
+    padding: 5px 10px; gap: 6px;
   }
   #action-bar .act-btn { padding: 6px 11px; font-size: 13px; letter-spacing: 1px; min-width: 48px; }
   #action-flash { font-size: 48px; letter-spacing: 4px; }
@@ -1479,8 +1497,8 @@ html, body {
   .cp-core .cp-wind { font-size: 22px; }
   .cp-core .cp-round { font-size: 11px; letter-spacing: 1px; margin-top: 2px; }
   .cp-core .cp-wall { font-size: 9px; margin-top: 1px; }
-  /* 矮屏纵向紧张：操作栏略抬高，保持右下角不压手牌 */
-  #action-bar { bottom: 88px; }
+  /* 矮屏纵向紧张：操作栏略降高度下限，保持中央黄金带不压手牌 */
+  #action-bar { bottom: clamp(108px, 19vh, 132px); }
 }
 
 /* =========================================================
