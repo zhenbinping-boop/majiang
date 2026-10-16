@@ -11,6 +11,7 @@
  */
 'use strict';
 const path = require('path');
+const { pickChip } = require('./helpers');
 const fs = require('fs');
 const puppeteer = require('puppeteer-core');
 
@@ -48,6 +49,7 @@ async function enterTable(page, timeout = 20000) {
     },
     { timeout, polling: 80 }
   ).catch(() => {});
+  await pickChip(page);   // 拿牌后选筹码弹窗（选 500），否则回合交互不解锁
 }
 
 /* ---------- 视口配置 ---------- */

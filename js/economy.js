@@ -3,34 +3,31 @@
  *
  * 设计定位（合规红线，务必保持）：
  *   代币为**纯虚拟**积分 —— 不可充值、不可提现、不可转赠，
- *   数值仅存 localStorage，仅用于局内皮肤解锁与牌局规格体验。
+ *   数值仅存 localStorage，仅用于局内皮肤解锁与牌局体验。
  *
  * 结构：
- *   - 局级（牌局规格）：茶局 / 金局 / 玉局，对应底分 100 / 500 / 1500，
- *     主界面开局前选择，总结算按「名次系数 × 底分」发放/扣取代币。
+ *   - 资金：初始 50 万代币（外置、可成长 —— 随每场输赢累积/消耗）。
+ *   - 筹码：玩家拿牌后每场选择一次（100 / 500 / 1500），
+ *     总结算按「名次系数 × 筹码」发放/扣取代币。
  *   - 名次系数：[+4, +1, -2, -4]（第 1~4 名），余额下限 0。
- *   - 破产补助：余额 < 200 时补到 1000，每日一次（按本地日期）。
- *   - 皮肤解锁：竹韵翡翠免费；深海鎏金 8000、紫檀玄金 15000。
+ *   - 破产补助：余额 < 2,000 时补到 20,000，每日一次（按本地日期）。
+ *   - 皮肤解锁：竹韵翡翠免费；深海鎏金 8,000、紫檀玄金 15,000。
  */
 (function (global) {
   'use strict';
 
   var LS_COINS = 'mj-coins';
-  var LS_STAKE = 'mj-stake';
   var LS_UNLOCKED = 'mj-unlocked';
   var LS_RELIEF = 'mj-relief';
 
-  var STAKES = {
-    tea:  { name: '茶局', sub: '小打小闹 · 无压力', base: 100 },
-    gold: { name: '金局', sub: '常规牌局 · 有来有回', base: 500 },
-    jade: { name: '玉局', sub: '大牌桌 · 赢大输大', base: 1500 },
-  };
-  var STAKE_ORDER = ['tea', 'gold', 'jade'];
-  /** 名次 1~4 → 代币系数 ×底分 */
+  /** 本场筹码选项（拿牌后弹窗选择，内存态、不持久化 —— 每场都要选） */
+  var CHIPS = [100, 500, 1500];
+  var chip = 500;
+  /** 名次 1~4 → 代币系数 ×筹码 */
   var RANK_DELTAS = [4, 1, -2, -4];
-  var START_COINS = 1000;
-  var RELIEF_BELOW = 200;
-  var RELIEF_TO = 1000;
+  var START_COINS = 500000;
+  var RELIEF_BELOW = 2000;
+  var RELIEF_TO = 20000;
 
   /** 皮肤目录（swatch 用于面板色卡） */
   var SKINS = {
@@ -66,29 +63,27 @@
     return coins;
   }
 
-  /* ---------- 局级 ---------- */
+  /* ---------- 筹码（每场开打前选一次，内存态） ---------- */
 
-  function getStake() {
-    var s = lsGet(LS_STAKE, 'tea');
-    return STAKES[s] ? s : 'tea';
+  function getChip() { return chip; }
+  function setChip(v) {
+    v = Math.round(v);
+    if (CHIPS.indexOf(v) >= 0) chip = v;
+    return chip;
   }
-  function setStake(id) {
-    if (!STAKES[id]) return;
-    lsSet(LS_STAKE, id);
-    renderStakePick();
-  }
-  function stakeInfo() { return STAKES[getStake()]; }
 
   /* ---------- 总结算：名次 → 代币 ---------- */
 
   /**
    * 整场（东1~南4）结束后按玩家名次结算代币。
    * @param {number} rank 玩家名次 1~4
+   * @param {number} [chipVal] 本场筹码（缺省用最近一次选择的）
    * @returns {number} 实际变动（含 0 下限截断），供结算弹窗展示
    */
-  function settleMatch(rank) {
+  function settleMatch(rank, chipVal) {
     if (!(rank >= 1 && rank <= 4)) return 0;
-    var d = RANK_DELTAS[rank - 1] * stakeInfo().base;
+    var base = CHIPS.indexOf(chipVal) >= 0 ? chipVal : chip;
+    var d = RANK_DELTAS[rank - 1] * base;
     var before = coins;
     addCoins(d);
     return coins - before;
@@ -142,34 +137,23 @@
     return String(Math.abs(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   }
 
-  /** 把余额同步到页面所有 .coin-val 节点 */
+  /** 把余额同步到页面所有 [data-coin-val] 节点 */
   function renderCoins() {
     if (typeof document === 'undefined') return;
     var nodes = document.querySelectorAll('[data-coin-val]');
     for (var i = 0; i < nodes.length; i++) nodes[i].textContent = fmt(coins);
   }
 
-  /** 同步主界面局级选择按钮的选中态 */
-  function renderStakePick() {
-    if (typeof document === 'undefined') return;
-    var cur = getStake();
-    var btns = document.querySelectorAll('.stake-btn');
-    for (var i = 0; i < btns.length; i++) {
-      var b = btns[i];
-      if (b.getAttribute('data-stake') === cur) b.classList.add('active');
-      else b.classList.remove('active');
-    }
-  }
-
   global.MJEconomy = {
-    STAKES: STAKES, STAKE_ORDER: STAKE_ORDER,
+    CHIPS: CHIPS,
     SKINS: SKINS, SKIN_ORDER: SKIN_ORDER,
     RANK_DELTAS: RANK_DELTAS,
+    START_COINS: START_COINS,
     getCoins: getCoins, addCoins: addCoins,
-    getStake: getStake, setStake: setStake, stakeInfo: stakeInfo,
+    getChip: getChip, setChip: setChip,
     settleMatch: settleMatch, maybeRelief: maybeRelief,
     ownedSkins: ownedSkins, isUnlocked: isUnlocked, unlockSkin: unlockSkin,
-    renderCoins: renderCoins, renderStakePick: renderStakePick,
+    renderCoins: renderCoins,
     fmt: fmt,
   };
 })(typeof window !== 'undefined' ? window : this);

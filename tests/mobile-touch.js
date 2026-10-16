@@ -3,6 +3,7 @@
    覆盖 3D 路径（canvas 射线拾取，竖屏旋转坐标换算）与 DOM 路径（?ui=dom）。 */
 const puppeteer = require('puppeteer-core');
 const path = require('path');
+const { pickChip } = require('./helpers');
 
 const CHROME = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const BASE = 'http://127.0.0.1:8765/index.html';
@@ -20,6 +21,7 @@ async function enterTable(page, url) {
     () => window.__mahjong && window.__mahjong.ui && !document.getElementById('app').hidden,
     { timeout: 20000 }
   );
+  await pickChip(page);   // 拿牌后选筹码弹窗（触摸链路也要先过这关）
   await sleep(2500); // 等发牌动画
 }
 

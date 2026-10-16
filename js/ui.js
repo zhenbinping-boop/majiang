@@ -707,6 +707,35 @@
       ], 10);
     }
 
+    /** 拿牌后选择本场筹码（每场一次；名次系数 ×筹码 = 代币变动） */
+    askChip() {
+      const econ = global.MJEconomy;
+      return new Promise((resolve) => {
+        const node = document.createDocumentFragment();
+        node.appendChild(this.el('h2', '', '选 择 筹 码'));
+        node.appendChild(this.el('div', 'subtitle',
+          '本场结算：第1名 +4 · 第2名 +1 · 第3名 −2 · 第4名 −4（×筹码）'));
+        const opts = this.el('div', 'chip-opts');
+        const chips = (econ && econ.CHIPS) || [100, 500, 1500];
+        const fmtN = (v) => (econ ? econ.fmt(v) : String(v));
+        chips.forEach((c) => {
+          const b = this.el('button', 'chip-btn' + (c === 500 ? ' active' : ''));
+          b.type = 'button';
+          b.innerHTML = `<span class="chip-v">🪙 ${fmtN(c)}</span>` +
+            `<span class="chip-sub">胜 +${fmtN(c * 4)} · 负 −${fmtN(c * 4)}</span>`;
+          b.addEventListener('click', () => {
+            this.sound.tick();
+            if (econ) econ.setChip(c);
+            this.closeModal();
+            resolve(c);
+          });
+          opts.appendChild(b);
+        });
+        node.appendChild(opts);
+        this.openModal(node);
+      });
+    }
+
     /** 自己回合的杠选择 */
     async askKong(kongOptions) {
       this.showHint('可以杠牌，请选择');
@@ -882,14 +911,14 @@
             <span class="sc">${fmtCoins(p.score)}</span>`;
           node.appendChild(row);
         });
-        /* 局外代币结算：名次系数 × 局级底分（economy.js 缺失时静默跳过） */
+        /* 局外代币结算：名次系数 × 本场筹码（economy.js 缺失时静默跳过） */
         const econ = global.MJEconomy;
         if (econ && playerRank > 0) {
-          const delta = econ.settleMatch(playerRank);
+          const delta = econ.settleMatch(playerRank, econ.getChip());
           const relief = econ.maybeRelief();
           const line = this.el('div', 'coin-delta ' + (delta >= 0 ? 'gain' : 'loss'));
           line.textContent = (delta >= 0 ? '代币 + ' : '代币 − ') + econ.fmt(Math.abs(delta)) +
-            '（' + econ.stakeInfo().name + ' · 第 ' + playerRank + ' 名）· 余额 ' + econ.fmt(econ.getCoins());
+            '（筹码 ' + econ.fmt(econ.getChip()) + ' · 第 ' + playerRank + ' 名）· 余额 ' + econ.fmt(econ.getCoins());
           node.appendChild(line);
           if (relief > 0) {
             const tip = this.el('div', 'coin-relief', '破产补助 + ' + econ.fmt(relief) + '，明天继续来把麻将！');

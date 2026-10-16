@@ -6,6 +6,7 @@
  */
 const puppeteer = require('puppeteer-core');
 const path = require('path');
+const { pickChip } = require('./helpers');
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const BASE = 'http://127.0.0.1:8765/index.html';
@@ -40,6 +41,7 @@ const SHOTS = path.join(__dirname, '..', 'shots');
     },
     { timeout: 20000, polling: 80 }
   );
+  await pickChip(page);   // 拿牌后选筹码弹窗
   await page.waitForFunction(() => {
     const d = window.__mjTable3d;
     return d && d.is3D && d.handCount(0) >= 13;

@@ -16,6 +16,7 @@
  */
 'use strict';
 const path = require('path');
+const { pickChip } = require('./helpers');
 const fs = require('fs');
 const puppeteer = require('puppeteer-core');
 
@@ -164,6 +165,7 @@ function snap() {
       if (d && d.is3D) return d.handCount(0) >= 13;   // 3D：手牌由 WebGL 场景渲染，DOM 无牌块
       return document.querySelectorAll('#my-hand .tile').length >= 13;
     }, { timeout: 25000, polling: 120 });
+    await pickChip(page);   // 拿牌后选筹码弹窗（否则返回主界面的确认弹窗会被遮挡）
     await sleep(600);
     const play = await page.evaluate(snap);
     await page.screenshot({ path: path.join(OUT, c.name + '-play.png') });
@@ -200,6 +202,7 @@ function snap() {
       if (d && d.is3D) return d.handCount(0) >= 13;
       return document.querySelectorAll('#my-hand .tile').length >= 13;
     }, { timeout: 25000, polling: 120 });
+    await pickChip(p);      // 拿牌后选筹码弹窗
     await sleep(500);
     await clickSel(p, '#btn-home');
     await p.waitForSelector('.modal-mask', { timeout: 5000 });

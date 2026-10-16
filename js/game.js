@@ -28,6 +28,7 @@
     async start() {
       const runId = ++this._runId;
       this.running = true;
+      this._chipAsked = false;   // 每场（东1~南4）拿牌后选一次筹码
       this.bindTopbar();
       this.syncEconomyChip();
       this.validateThemeUnlocked();
@@ -37,12 +38,10 @@
 
     /* ---------- 局外代币 ---------- */
 
-    /** 顶栏同步：局级徽标 + 代币余额 */
+    /** 顶栏同步：代币余额（筹码改为拿牌后弹窗选择，不再有局级徽标） */
     syncEconomyChip() {
       const econ = global.MJEconomy;
       if (!econ) return;
-      const chip = this.ui.$('stake-chip');
-      if (chip) chip.textContent = econ.stakeInfo().name;
       econ.renderCoins();
     }
 
@@ -222,6 +221,12 @@
     async playHand(runId) {
       await this.ui.animateDeal();
       if (!this.isAlive(runId)) return null;
+      /* 拿到牌后选择本场筹码（每场一次； economically 即选底分） */
+      if (!this._chipAsked) {
+        this._chipAsked = true;
+        await this.ui.askChip();
+        if (!this.isAlive(runId)) return null;
+      }
       let guard = 0;
       let justClaimedPongOrChi = false;
       while (this.isAlive(runId) && guard++ < 400) {

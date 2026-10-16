@@ -154,18 +154,9 @@
       enterGame(false);
     });
 
-    /* 局级（牌局规格）选择：底分决定总结算代币变动幅度 */
+    /* 局外代币：每日破产补助检查 + 余额徽标同步（筹码改为拿牌后弹窗选择） */
     const econ = window.MJEconomy || null;
     if (econ) {
-      const stakePick = $('stake-pick');
-      if (stakePick) {
-        stakePick.addEventListener('click', (ev) => {
-          const btn = ev.target.closest('.stake-btn');
-          if (!btn) return;
-          econ.setStake(btn.getAttribute('data-stake'));
-        });
-        econ.renderStakePick();
-      }
       econ.maybeRelief();
       econ.renderCoins();
     }

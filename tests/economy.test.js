@@ -1,6 +1,6 @@
 /**
  * tests/economy.test.js — 局外代币经济模块专项验证
- * 覆盖：余额初始化/下限截断、局级选择、名次结算、皮肤解锁/余额不足、破产补助每日一次
+ * 覆盖：50 万初始资金、筹码选择、名次结算、皮肤解锁/余额不足、破产补助每日一次
  */
 const path = require('path');
 const fs = require('fs');
@@ -28,53 +28,63 @@ function ok(cond, name) {
   else { fail++; console.log('  ✗ ' + name); }
 }
 
-console.log('== 余额初始化 ==');
-ok(E.getCoins() === 1000, '首次启动赠 1,000 代币（实际 ' + E.getCoins() + '）');
+console.log('== 资金初始化 ==');
+ok(E.START_COINS === 500000, '初始资金常量 500,000');
+ok(E.getCoins() === 500000, '首次启动赠 50 万代币（实际 ' + E.getCoins() + '）');
 
-console.log('== 局级选择 ==');
-ok(E.getStake() === 'tea' && E.stakeInfo().base === 100, '默认茶局 · 底分 100');
-E.setStake('gold');
-ok(E.getStake() === 'gold' && E.stakeInfo().base === 500, '切金局 · 底分 500');
-E.setStake('nope');
-ok(E.getStake() === 'gold', '非法局级名被拒绝，保持金局');
+console.log('== 筹码选择 ==');
+ok(JSON.stringify(E.CHIPS) === '[100,500,1500]', '筹码选项 100/500/1500');
+ok(E.getChip() === 500, '默认筹码 500');
+ok(E.setChip(1500) === 1500 && E.getChip() === 1500, '选大筹 1500');
+ok(E.setChip(9999) === 1500, '非法筹码被拒绝，保持 1500');
+E.setChip(100);
+ok(E.getChip() === 100, '选小筹 100');
 
-console.log('== 名次结算（金局 · 底分 500）==');
+console.log('== 名次结算（筹码 100）==');
 let d = E.settleMatch(1);
-ok(d === 2000 && E.getCoins() === 3000, '第 1 名 +2,000（实际 ' + d + '）');
+ok(d === 400 && E.getCoins() === 500400, '第 1 名 +400（实际 ' + d + '）');
 d = E.settleMatch(4);
-ok(d === -2000 && E.getCoins() === 1000, '第 4 名 −2,000（实际 ' + d + '）');
+ok(d === -400 && E.getCoins() === 500000, '第 4 名 −400');
 d = E.settleMatch(2);
-ok(d === 500 && E.getCoins() === 1500, '第 2 名 +500');
+ok(d === 100, '第 2 名 +100');
 d = E.settleMatch(3);
-ok(d === -1000 && E.getCoins() === 500, '第 3 名 −1,000');
+ok(d === -200, '第 3 名 −200');
 d = E.settleMatch(9);
 ok(d === 0, '非法名次返回 0 变动');
 
+console.log('== 名次结算（显式传筹码 1500，不改默认）==');
+d = E.settleMatch(1, 1500);
+ok(d === 6000, '传参筹码 1500 → 第 1 名 +6,000（实际 ' + d + '）');
+ok(E.getChip() === 100, '传参不改变当前选中筹码');
+d = E.settleMatch(4, 1500);
+ok(d === -6000 && E.getCoins() === 499900, '传参筹码 1500 → 第 4 名 −6,000');
+
 console.log('== 皮肤解锁 ==');
 let r = E.unlockSkin('ocean');
-ok(!r.ok && r.reason === 'poor', '余额 500 解锁 8,000 鎏金 → 拒绝（poor）');
-E.addCoins(9500); // 500 → 10,000
-ok(E.getCoins() === 10000, '充值代币到 10,000（纯虚拟加币）');
-r = E.unlockSkin('ocean');
-ok(r.ok && E.isUnlocked('ocean'), '8,000 解锁深海鎏金成功');
-ok(E.getCoins() === 2000, '扣款后余额 2,000（实际 ' + E.getCoins() + '）');
+ok(r.ok && E.isUnlocked('ocean'), '50 万资金解锁 8,000 鎏金成功');
+ok(E.getCoins() === 491900, '扣款后余额 491,900（实际 ' + E.getCoins() + '）');
 r = E.unlockSkin('ocean');
 ok(!r.ok && r.reason === 'owned', '重复解锁 → owned');
 r = E.unlockSkin('sandal');
-ok(!r.ok && r.reason === 'poor', '2,000 解锁 15,000 玄金 → 拒绝（poor）');
-ok(E.ownedSkins().length === 2 && E.ownedSkins().indexOf('jade') >= 0, '翡翠始终默认拥有');
+ok(r.ok && E.isUnlocked('sandal'), '15,000 解锁玄金成功');
+r = E.unlockSkin('nope');
+ok(!r.ok && r.reason === 'no-skin', '未知皮肤 → no-skin');
+ok(E.ownedSkins().length === 3 && E.ownedSkins().indexOf('jade') >= 0, '翡翠始终默认拥有');
 
-console.log('== 破产补助 ==');
-E.addCoins(-2500); // 2,000 → 0（下限截断）
+console.log('== 破产补助（<2,000 补到 20,000，每日一次）==');
+E.addCoins(-999999); // → 0（下限截断）
 ok(E.getCoins() === 0, '余额下限截断为 0（实际 ' + E.getCoins() + '）');
 const g1 = E.maybeRelief();
-ok(g1 === 1000 && E.getCoins() === 1000, '补助 +1,000（实际 +' + g1 + '）');
+ok(g1 === 20000 && E.getCoins() === 20000, '补助 +20,000（实际 +' + g1 + '）');
 const g2 = E.maybeRelief();
 ok(g2 === 0, '同一天二次触发 → 0');
+E.addCoins(-19000); // → 1,000 < 2,000
+ok(E.maybeRelief() === 0, '低于阈值但今日已领 → 0');
 
 console.log('== 持久化 ==');
 ok(store.get('mj-coins') === '1000', '余额已写回存储');
 ok(JSON.parse(store.get('mj-unlocked')).indexOf('ocean') >= 0, '解锁清单已持久化');
+ok(store.get('mj-stake') === undefined, '旧局级键已不再写入');
 
 console.log('\n========== 通过 ' + pass + ' / 失败 ' + fail + ' ==========');
 process.exit(fail ? 1 : 0);

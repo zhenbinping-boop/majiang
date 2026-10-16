@@ -13,6 +13,7 @@
  */
 'use strict';
 const path = require('path');
+const { pickChip } = require('./helpers');
 const fs = require('fs');
 const puppeteer = require('puppeteer-core');
 
@@ -52,6 +53,7 @@ async function enterTable(page) {
     },
     { timeout: 15000, polling: 80 }
   ).catch(() => {});
+  await pickChip(page);   // 拿牌后选筹码弹窗
   await sleep(120);
 }
 

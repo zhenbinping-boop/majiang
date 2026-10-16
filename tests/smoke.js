@@ -101,6 +101,7 @@ async function runMatch(seed) {
   ui.animateDiscard = () => {};
   ui.animateClaim = async () => {};
   ui.toast = () => {};
+  ui.askChip = async () => 500;   // 拿牌后的筹码弹窗：桩环境无真实 DOM，直接选 500
 
   /* --- 人类决策（座位 0） --- */
   ui.askDiscard = async () => {

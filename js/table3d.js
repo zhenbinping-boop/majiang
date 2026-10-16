@@ -26,18 +26,25 @@
 
   /* ================= 常量（雀魂式比例基准） ================= */
   const TILE_W = 1.15, TILE_H = 1.56, TILE_D = 0.82;  // 宽:长:厚（世界单位）
-  const GAP = 0.06;                                    // 牌间微缝
+  const GAP = 0.08;                                    // 牌间微缝（按真实脚印计）
   const TILE_R = 0.13, BEVEL = 0.04;                   // 圆角与倒角
+  /* 倒角会把手牌轮廓向外扩 BEVEL/边 —— 真实占地脚印比名义尺寸大 0.08：
+     实测牌河牌世界 AABB = 1.23 × 1.64。所有步进常量必须按「脚印 + GAP」计，
+     否则全场相邻牌互相穿透（历史上 GAP=0.06 直接造成 0.02 重叠） */
+  const FOOT_W = TILE_W + BEVEL * 2;                   // 1.23 —— 真实脚印宽
+  const FOOT_H = TILE_H + BEVEL * 2;                   // 1.64 —— 真实脚印长
 
   const RIVER_COLS = 6, RIVER_ROWS = 3;
-  const RX = TILE_W + GAP;                             // 1.21 —— 行内步进
-  const RZ = TILE_H + GAP;                             // 1.62 —— 换行步进
+  const RX = FOOT_W + GAP;                             // 1.31 —— 行内步进
+  const RZ = FOOT_H + GAP;                             // 1.72 —— 换行步进
   const R_COMPASS = 2.5;                               // 中央罗盘外径
-  const R_RIVER = 4.45;                                // 牌河第 1 行中心距桌心
-                                                       //（> 行半宽 3.63，且经对角
-                                                       //   分离轴验证四角零重叠）
+  const R_RIVER = 4.8;                                 // 牌河第 1 行中心距桌心
+                                                       // 需 ≥ 2.5·RX + FOOT_H/2 + FOOT_W/2
+                                                       // = 4.71（对角分离轴：与相邻玩家
+                                                       //   牌河的角部错开），取 4.8；
+                                                       // 第 3 行外缘 9.06 < 副露内缘 9.19 ✓
   const R_HAND = 9.6;                                  // 手牌/副露桌沿基准线
-  const HAND_PITCH = TILE_W + GAP;                     // 手牌步进
+  const HAND_PITCH = FOOT_W + GAP;                     // 手牌步进
   const DRAW_GAP = 0.35 * TILE_W;                      // 摸牌自动留出的间距
   const MELD_GAP = 0.6;                                // 手牌段与副露段间距
   const GROUP_GAP = 0.3;                               // 副露组间距
@@ -906,10 +913,10 @@
         grp.remove(m);
       }
       const t = TAN[pid], d = SEAT_DIR[pid];
-      /* 精确游标：每张牌按实际占地（横置 TILE_H / 竖放 TILE_W）+ GAP 累加 */
+      /* 精确游标：每张牌按实际占地（横置 FOOT_H / 竖放 FOOT_W，含倒角外扩）+ GAP 累加 */
       const meldSpan = (m) => {
         const claimedIdx = m.from >= 0 ? m.tiles.indexOf(m.tile) : -1;
-        return m.tiles.reduce((s, _, k) => s + (k === claimedIdx ? TILE_H : TILE_W), 0)
+        return m.tiles.reduce((s, _, k) => s + (k === claimedIdx ? FOOT_H : FOOT_W), 0)
           + Math.max(0, m.tiles.length - 1) * GAP;
       };
       const total = melds.reduce((s, m) => s + meldSpan(m), 0)

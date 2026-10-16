@@ -13,6 +13,7 @@
  */
 'use strict';
 const path = require('path');
+const { pickChip } = require('./helpers');
 const fs = require('fs');
 const puppeteer = require('puppeteer-core');
 
@@ -68,6 +69,7 @@ async function waitPendingSettle(page, timeout = 3000) {
       () => window.__mjTable3d && window.__mjTable3d.is3D && window.__mjTable3d.handCount(0) >= 13,
       { timeout: 25000, polling: 100 }
     );
+    await pickChip(page);   // 拿牌后选筹码弹窗
     await sleep(1500);
 
     const r = await page.evaluate(() => {

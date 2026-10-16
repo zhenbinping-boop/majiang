@@ -32,6 +32,16 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   }, { timeout: 20000, polling: 80 });
   await page.waitForFunction(() => window.__mahjong && window.__mahjong.ui && window.__mahjong.ui.t3d, { timeout: 10000 });
   await page.waitForFunction(() => window.__mahjong.ui.t3d.debug().handCount(0) === 14, { timeout: 20000, polling: 100 });
+  /* 拿牌后的筹码选择弹窗：选 500 让它退场，避免遮挡 🎨 / 画布 */
+  await page.waitForFunction(() => {
+    const modal = document.getElementById('modal-root');
+    return modal && modal.children.length > 0 &&
+      [...modal.querySelectorAll('.chip-btn')].length >= 3;
+  }, { timeout: 15000, polling: 100 });
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.chip-btn')].find(b => b.textContent.includes('500')).click();
+  });
+  await sleep(800);
   await sleep(2500);
 
   const names = ['jade', 'ocean', 'sandal'];
@@ -74,6 +84,11 @@ for n in ['jade', 'ocean', 'sandal']:
 print(json.dumps(out))
 `;
   fs.writeFileSync(path.join(OUT, '_sample.py'), py);
-  const r = execSync(`"${process.env.PY || 'python'}" "${path.join(OUT, '_sample.py')}"`, { cwd: path.resolve(__dirname, '..') });
-  console.log('pixels:', r.toString());
+  /* Python 像素采样偶发 spawn EBUSY（Windows 文件占用）—— 非致命，截图断言已足够 */
+  try {
+    const r = execSync(`"${process.env.PY || 'python'}" "${path.join(OUT, '_sample.py')}"`, { cwd: path.resolve(__dirname, '..') });
+    console.log('pixels:', r.toString());
+  } catch (e) {
+    console.log('pixels: 采样跳过（spawn 失败，非致命）');
+  }
 })().catch(e => { console.error(e); process.exit(1); });
