@@ -1150,23 +1150,31 @@
       if (app) {
         const tr = getComputedStyle(app).transform;
         if (tr && tr !== 'none') {
-          const m = tr.match(/matrix\(([^)]+)\)/);
+          const m = tr.match(/matrix(?:3d)?\(([^)]+)\)/);
           if (m) {
-            const a = parseFloat(m[1].split(',')[0]);
-            const b = parseFloat(m[1].split(',')[1]);
+            const parts = m[1].split(',').map(parseFloat);
+            const a = parts[0], b = parts[1];
             deg = Math.round(Math.atan2(b, a) * 180 / Math.PI);
           }
         }
       }
       const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
       const dx = sx - cx, dy = sy - cy;
+      /* 关键：旋转 90° 时屏幕盒宽高互换 —— 物理宽 r.width = 逻辑高，
+         物理高 r.height = 逻辑宽。逻辑轴的跨度必须取对应的物理轴长度：
+         逻辑 x 轴映射到屏幕竖直方向（dy），其半跨 = 物理高/2；
+         逻辑 y 轴映射到屏幕水平方向（dx），其半跨 = 物理宽/2。
+         （旧实现 deg=90 分支误用 r.width/r.height 当逻辑跨度，
+          导致竖屏下 NDC 恒错、射线永远打不到手牌 —— 移动端无法出牌的根因） */
+      const rot = deg === 90 || deg === -90 || deg === 270;
+      const lw = rot ? r.height : r.width;   // 逻辑宽（= offsetWidth）
+      const lh = rot ? r.width : r.height;   // 逻辑高（= offsetHeight）
       let lx, ly;
-      const Lw = r.width, Lh = r.height;   // 旋转 90° 时屏幕盒宽高互换 = 逻辑宽高
-      if (deg === 90) { lx = Lw / 2 + dy; ly = Lh / 2 - dx; }
-      else if (deg === -90 || deg === 270) { lx = Lw / 2 - dy; ly = Lh / 2 + dx; }
-      else if (deg === 180) { lx = Lw / 2 - dx; ly = Lh / 2 - dy; }
-      else { lx = Lw / 2 + dx; ly = Lh / 2 + dy; }
-      return { x: lx, y: ly, w: Lw, h: Lh };
+      if (deg === 90) { lx = lw / 2 + dy; ly = lh / 2 - dx; }
+      else if (deg === -90 || deg === 270) { lx = lw / 2 - dy; ly = lh / 2 + dx; }
+      else if (deg === 180) { lx = lw / 2 - dx; ly = lh / 2 - dy; }
+      else { lx = lw / 2 + dx; ly = lh / 2 + dy; }
+      return { x: lx, y: ly, w: lw, h: lh };
     }
 
     _pick(e) {
