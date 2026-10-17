@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>麻将数学 · 深度调研报告</title>
+<style>
+  :root { --ink:#1a2332; --sub:#5a6b80; --line:#e3e9f0; --bg:#f6f8fa; --card:#ffffff;
+          --blue:#2563eb; --green:#059669; --amber:#d97706; --red:#dc2626; --purple:#7c3aed; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:"PingFang SC","Microsoft YaHei",sans-serif; color:var(--ink);
+         background:var(--bg); line-height:1.75; padding:40px 16px 80px; }
+  .wrap { max-width:860px; margin:0 auto; }
+  h1 { font-size:30px; margin-bottom:6px; letter-spacing:1px; }
+  .meta { color:var(--sub); font-size:14px; margin-bottom:32px; }
+  h2 { font-size:21px; margin:44px 0 14px; padding-left:12px; border-left:4px solid var(--blue); }
+  h3 { font-size:16px; margin:24px 0 8px; }
+  p { margin:10px 0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:20px 24px; margin:14px 0; }
+  .formula { background:#0f172a; color:#e2e8f0; border-radius:10px; padding:14px 18px;
+             font-family:Consolas,Menlo,monospace; font-size:15px; margin:12px 0;
+             overflow-x:auto; white-space:pre; line-height:1.9; }
+  .formula .c { color:#7dd3fc; } .formula .g { color:#86efac; } .formula .y { color:#fde047; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:14px; background:var(--card); }
+  th,td { border:1px solid var(--line); padding:8px 12px; text-align:left; vertical-align:top; }
+  th { background:#eef3f8; font-weight:600; }
+  .tag { display:inline-block; padding:2px 10px; border-radius:20px; font-size:12px; margin-right:6px; }
+  .t-blue { background:#dbeafe; color:#1d4ed8; } .t-green { background:#d1fae5; color:#047857; }
+  .t-amber { background:#fef3c7; color:#b45309; } .t-red { background:#fee2e2; color:#b91c1c; }
+  .t-purple { background:#ede9fe; color:#6d28d9; }
+  .note { background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:12px 16px;
+          font-size:14px; margin:12px 0; }
+  ul,ol { padding-left:22px; margin:8px 0; }
+  li { margin:5px 0; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:640px){ .grid{grid-template-columns:1fr;} }
+  .small { font-size:13px; color:var(--sub); }
+  code { background:#eef2f7; padding:1px 6px; border-radius:5px; font-size:13px;
+         font-family:Consolas,monospace; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>🀄 麻将数学 · 深度调研报告</h1>
+<div class="meta">为「来把麻将」引入数学公式体系而作 · 2026-10-16 · 调研范围：牌效率理论 / 概率期望 / 防守数学 / 麻将 AI 前沿 / 可复用开源实现</div>
+
+<h2>〇、一页结论</h2>
+<div class="card">
+<p><b>麻将的数学不是玄学，是一套成熟的、可计算的三层体系：</b></p>
+<ol>
+  <li><span class="tag t-blue">进攻</span><b>牌效率</b> —— 向听数、进张数、和了率：把「离胡有多远、多快能到」变成数字；</li>
+  <li><span class="tag t-red">防守</span><b>危险度理论</b> —— 筋牌、现物、生张分级：把「这张牌多危险」变成数字；</li>
+  <li><span class="tag t-green">决策</span><b>期望值（局收支）</b> —— 把「攻还是守」变成一个减法算式。</li>
+</ol>
+<p>这三层全部可以<b>用纯公式 + 本地模拟</b>实现，不需要神经网络。日麻 AI（Suphx/Mortal）证明上限在深度学习，但<b>公式层已能覆盖业余玩家 80% 的决策质量</b>——这正是我们要的：既提升游戏 AI 强度，又能做成教学功能帮玩家提升现实牌技。</p>
+</div>
+
+<h2>一、进攻数学：向听数 → 进张数 → 和了率</h2>
+
+<h3>1.1 向听数（Shanten）——距离听牌还差几次换牌</h3>
+<p>这是整个体系的基石。标准型（4 面子 + 1 雀头）有闭式公式：</p>
+<div class="formula"><span class="c">向听数</span> = 8 − 2×<span class="g">面子数 m</span> − <span class="g">搭子数 t</span> − <span class="y">雀头 p(0/1)</span>
+约束：m + t ≤ 4   （第 5 个搭子毫无用处，最常漏掉的陷阱）
+
+七对：  向听 = 6 − 对子数 + max(0, 7 − 种类数)
+国士：  向听 = 13 − 一九字牌种类数 − (有对则 −1)
+实际取三种分解的最小值；−1 = 已和，0 = 听牌</div>
+<p><b>关键细节</b>：同一手牌有多种拆分（如 <code>1234s</code> 可拆成顺子+孤张或两搭子），必须枚举所有分解取最优——我们 <code>engine.js</code> 里 <code>shanten()</code>（196 行附近的 8−2M−p−min 公式）已经实现了这一点，<b>这一层我们已经有了</b>。</p>
+
+<h3>1.2 进张数（Ukeire）——有效牌的种类 × 剩余张数</h3>
+<p>向听数只回答「多远」，进张数回答「多快」。算法：对每个候选弃牌，逐一试 34 种牌，凡能使向听 −1 的记为有效牌，按「4 − 自己持有 − 已现张数」累加剩余张数。</p>
+<div class="formula">进张数 = Σ (有效牌种类) × (该牌剩余张数)
+改良牌：不降向听但增加后续进张的牌（一舍一进的取舍依据）</div>
+<p>经典案例：一向听时「9 种 23 张」的好形远胜「7 种 15 张」的愚形——<b>向听相同，价值天差地别</b>。我们的 <code>effectiveTiles()</code> 已能算出 total/live，但尚未做成玩家可见的 UI，也没参与 AI 的精细比较。</p>
+
+<h3>1.3 和了率——把进张折算成概率</h3>
+<div class="formula">每巡摸中进张概率 ≈ 进张数 / 剩余可见未知牌数
+剩余 n 巡时和了率 ≈ 1 − (1 − 进张数/余牌数)^n
+ 听牌阶段：和了率 ≈ 待牌剩余张数 / 余牌数（逐巡累积）</div>
+<p>进阶修正：中途进张会「改形」（如坎张摸到邻张变两面），精确算法是对每巡做状态展开，或用 Monte Carlo 模拟千次发牌统计——后者在我们纯前端环境里 <b>几十毫秒即可完成</b>，是性价比最高的方案。</p>
+
+<h2>二、打点与期望值：局收支公式（核心中的核心）</h2>
+<p>来源：《统计学的麻将战术》（とつげき東北，天凤凤凰桌数据）。决策标准不是「能不能胡」，而是<b>局收支（期望点数变动）</b>：</p>
+<div class="formula"><span class="c">局收支</span> = 和率×和牌得点 − 铳率×放铳失点
+         − 被自摸率×失点 − 横移动率×失点 + 流局率×得点
+
+<span class="c">简化式</span>（只需两个数）：
+局收支 ≈ 和率 × (打点 + 1500) − 1500</div>
+<p>日麻基准参数（子家）：铳率 12%（失点 −5000）、被自摸 26%（−2000）、横移动 24%、流局 16%。由此得到大量反直觉结论：</p>
+<ul>
+  <li>两面满贯 1v1 对攻，局收支只有约 +1500——<b>看着 8000 点，其实没那么赚</b>；</li>
+  <li>胡牌 +6、放铳 −10 时，铳率超过 ~33% 就该弃胡——<b>防守不是胆小，是算术</b>；</li>
+  <li>先制立直 vs 默听的判断：立直和率大幅提升（振听 + 一发 + 里宝），期望收益常为默听的 3 倍以上。</li>
+</ul>
+<div class="note">💡 <b>对我们的关键启示</b>：我们是大众麻将倍率制（平胡×1 到 龙七对×12），不能照搬日麻点数表。但项目里已有 <code>tests/smoke.js</code>（40 场 320 局模拟框架）——可以<b>跑大规模自模拟，统计出我们自己的铳率/和率/倍率分布基准表</b>，让局收支公式用我们自己标定的参数。这是别人没有的差异化能力。</div>
+
+<h2>三、防守数学：危险度分级体系</h2>
+<p>防守端的核心是「筋（Suji）理论 + 现物规则 + 巡目修正」，Allen 教程给出完整安全度分级：</p>
+<table>
+<tr><th>安全度</th><th>牌的类型</th><th>说明</th></tr>
+<tr><td><b>S</b></td><td>现物（跟打该家刚打过的牌）</td><td>绝对安全，永不放铳</td></tr>
+<tr><td><b>A+</b></td><td>字牌已现 2~3 张</td><td>仅剩单骑/国士风险</td></tr>
+<tr><td><b>A−</b></td><td>1/9 筋（现 23 打 1，现 78 打 9 等）</td><td>只输坎张/单骑类愚形</td></tr>
+<tr><td><b>B+/B−</b></td><td>2/8 筋、3/7 筋、两筋</td><td>逐渐多输坎张、边张</td></tr>
+<tr><td><b>C+/C−</b></td><td>无筋 1/9、无筋 2/8、片筋 4/5/6</td><td>仍是过渡性安全牌</td></tr>
+<tr><td><b>D/E</b></td><td>无筋 3/7、无筋 4/5/6（中张生张）</td><td>后期铳率 25~50%，尽量不打</td></tr>
+</table>
+<div class="formula">表筋：现 4 → 1、7 安全；现 5 → 2、8 安全；现 6 → 3、9 安全
+（对手听两面好形时必听筋牌，故筋牌不铳好形）
+两筋：现 1、7 打 4；现 2、8 打 5；现 3、9 打 6 —— 不输边张
+修正项：宝牌周边 −1 级 / 宝牌本身 −3 级 / 巡目越深生张越危险</div>
+<p>上海敲麻教材还给出<b>按巡目分阶段的铳率参考表</b>（如中期中张生张 18~30%、后期 35~50%；已现 2 张的牌降到 5~10%），这类表可以直接做成我们游戏里的「危险度热力标签」。</p>
+
+<h2>四、麻将 AI 前沿：公式够不够？</h2>
+<table>
+<tr><th>AI</th><th>技术路线</th><th>强度</th><th>可复用性</th></tr>
+<tr><td><b>Suphx</b>（微软）</td><td>5 个深度残差 CNN + 监督学习 + 自博弈 RL + 先知引导 + 全局奖励预测</td><td>天凤十段，稳定 8.4 段，超 99.99% 人类</td><td>不开源，不可用</td></tr>
+<tr><td><b>Mortal</b>（开源）</td><td>离线 RL + 在线 RL，当前公认最强开源</td><td>远超 akochan</td><td>Rust/C++ + 神经网络权重，纯前端浏览器跑不动</td></tr>
+<tr><td><b>akochan</b>（开源）</td><td>MDP 抽象 + 搜索树</td><td>强，但慢（复盘一局 10~60 分钟）</td><td>思路可借鉴：小规模搜索</td></tr>
+<tr><td><b>NAGA</b></td><td>商业深度学习复盘服务</td><td>高（但据社区评测弱于 Mortal）</td><td>闭源</td></tr>
+</table>
+<p><b>调研结论</b>：顶级 AI 的优势在于「局面泛化评估」（靠海量对局训练的神经网络直觉），但支撑它们训练的<b>底层奖励信号恰恰就是向听数 + 进张数 + 期望值这套公式</b>（向听数被论文原话称为「把稀疏的胜负变成稠密距离信号」）。对我们来说：</p>
+<ul>
+  <li>神经网络路线在纯前端单文件项目里不现实（模型几百 MB）；</li>
+  <li><b>公式层 + Monte Carlo 搜索</b>是正确路线：可解释（天然适合教学）、可增量（不动现有架构）、强度对休闲玩家足够（当前 AI 连「进张数比较」都还没用满）。</li>
+</ul>
+
+<h2>五、现状盘点：我们已有 vs 缺失</h2>
+<table>
+<tr><th>模块</th><th>已具备 ✅</th><th>缺失 ❌</th></tr>
+<tr><td>向听</td><td>标准 + 七对向听、副露向听（engine.js）</td><td>国士（大众麻将可不做）</td></tr>
+<tr><td>进张</td><td>effectiveTiles 总数/活张（ai.js 两阶段评估）</td><td>改良牌计算、切牌候选的进张对比 <b>UI 化</b></td></tr>
+<tr><td>待牌</td><td>听牌提示（听口 UI 已有）</td><td>待牌形分类（两面/坎张/边张/单骑）、剩余张数显示</td></tr>
+<tr><td>概率</td><td>—</td><td>和了率、剩余巡数、摸中概率</td></tr>
+<tr><td>打点</td><td>番型倍率结算（高点法）</td><td><b>每张弃牌的打点期望</b>（进张后是什么牌型、值多少倍）</td></tr>
+<tr><td>防守</td><td>现物 / 见四张绝对安全、压迫感启发式</td><td>筋理论、巡目铳率表、危险度数值化</td></tr>
+<tr><td>决策</td><td>向听优先 + 进张 + 风险启发式</td><td><b>局收支 EV 统一决策</b>（攻/守/横移动全走一个公式）</td></tr>
+<tr><td>AI 强度</td><td>休闲级</td><td>难度分级（用数学深度当难度旋钮）</td></tr>
+</table>
+
+<h2>六、落地方案建议（三层递进）</h2>
+
+<div class="card">
+<h3>🧮 Layer 1 · 数学内核 <code>js/mjmath.js</code>（纯计算，零 UI）</h3>
+<ul>
+  <li>向听（复用 engine）+ <b>切牌全量评估</b>：对 14 张每一张弃牌，输出 {向听, 进张种类, 进张张数, 待牌列表, 改良牌}</li>
+  <li><b>和了率估计</b>：Monte Carlo 洗牌模拟（每次 ~5ms，200 次迭代 ≈ 1s 内；或纯公式近似做到 0ms）</li>
+  <li><b>危险度函数</b>：danger(tile, 上下文) → 0~1（筋理论 + 现张数 + 巡目 + 副露信号加权）</li>
+  <li><b>打点期望</b>：对每个进张分支算成牌番型倍率，得到「进张平均价值」</li>
+  <li>输出统一评估对象 <code>{ shanten, ukeire, winRate, expValue, danger }</code>——UI 和 AI 共用</li>
+</ul>
+</div>
+
+<div class="card">
+<h3>🎓 Layer 2 · 玩家特色功能（差异化卖点：会打麻将 = 会算数）</h3>
+<ol>
+  <li><b>「军师模式」</b>（可开关）：每巡在你的手牌上方标出每张弃牌的进张数/和了率/危险度三色徽标，实时解释「为什么推荐打这张」——玩家开着玩就是上牌效率课；</li>
+  <li><b>复盘教练</b>：一局结束后逐巡对比「你的选择 vs 数学最优」，给出 EV 差值与改进建议（对标 NAGA/Mortal 复盘的核心体验）；</li>
+  <li><b>何切练习场</b>（主界面新入口）：随机发 13 张牌 → 玩家选切牌 → 系统按进张数/EV 评分，题库式训练——<b>这就是「提高现实麻将技术」的最直接载体</b>，现实麻将教材（何切 301 等）核心训练法完全一致；</li>
+  <li><b>听牌信息卡</b>：听牌时显示待牌形（两面/坎张…）、剩余张数、被自摸概率估算。</li>
+</ol>
+</div>
+
+<div class="card">
+<h3>🤖 Layer 3 · AI 升级（强度与难度双收）</h3>
+<ul>
+  <li>弃牌决策从「向听 → 进张」两阶段升级为 <b>EV 统一评估</b>：攻（进张×打点期望）vs 守（危险度×铳率×对手牌型倍率）直接比大小；</li>
+  <li>危险度用筋理论数值化替代现在的粗启发式；</li>
+  <li><b>难度分级免费获得</b>：数学内核参数化（噪声注入 / 只用部分公式 / 搜索深度）→ 新手/进阶/大师三档 AI，无需另写逻辑；</li>
+  <li>用 <code>smoke.js</code> 框架跑千场自模拟，标定我们倍率制下的局收支参数表 + 验证 AI 强度提升（段位对比）。</li>
+</ul>
+</div>
+
+<h2>七、几个需要一起定的讨论点</h2>
+<ol>
+  <li><b>军师模式的形态</b>：做成「提示开关」（休闲玩家随时看）还是「付费/代币解锁」接入现有经济系统？我倾向前者——教学功能是口碑，不是付费墙；</li>
+  <li><b>和了率算到多细</b>：公式近似（快，够用）vs Monte Carlo（准，稍慢）——建议听牌后用精确、听牌前用近似；</li>
+  <li><b>何切练习场优先级</b>：它是「现实技术迁移」最强的功能，但属于新入口新玩法；要不要进本期？</li>
+  <li><b>危险度表来源</b>：先手抄日麻基准（快），还是先跑 1000 场自模拟标定自己的表（准，慢半小时）——我建议二期再标定，一期用日麻参数先跑通；</li>
+  <li><b>AI 难度</b>：借这次机会做难度选择吗？（现有代币经济的茶/金/玉局级正好可以挂难度）</li>
+</ol>
+
+<div class="note">📌 <b>一句话总结</b>：向听数、进张数、危险度、局收支期望——四个公式构成一套完整、可解释、纯前端可实现的麻将数学体系。Layer 1 内核 + Layer 3 AI 升级是技术主线，Layer 2 的「军师模式 + 何切练习场」是让这个游戏真正区别于其他麻将 App 的特色，也是玩家把游戏里练出的数感带回现实牌桌的桥梁。</div>
+
+<p class="small" style="margin-top:30px">主要参考：Allen 立直麻雀教程（牌安全度）/《统计学的麻将战术》局收支体系 / Mahjong Lab 向听·进张训练 / Suphx 论文（arXiv:2003.13590）/ Mortal & mjai.ekyu.moe / riichi.wiki Shanten & Tile efficiency</p>
+
+</div>
+</body>
+</html>

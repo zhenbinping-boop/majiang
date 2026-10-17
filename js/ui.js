@@ -707,14 +707,14 @@
       ], 10);
     }
 
-    /** 拿牌后选择本场筹码（每场一次；名次系数 ×筹码 = 代币变动） */
+    /** 每次开小局拿到牌后选择筹码（筹码即本局底注，局内外共享，输赢实时入代币） */
     askChip() {
       const econ = global.MJEconomy;
       return new Promise((resolve) => {
         const node = document.createDocumentFragment();
         node.appendChild(this.el('h2', '', '选 择 筹 码'));
         node.appendChild(this.el('div', 'subtitle',
-          '本场结算：第1名 +4 · 第2名 +1 · 第3名 −2 · 第4名 −4（×筹码）'));
+          '筹码即本局底注：点炮者付 底注×倍率，自摸三家各付半注；输赢实时计入代币余额'));
         const opts = this.el('div', 'chip-opts');
         const chips = (econ && econ.CHIPS) || [100, 500, 1500];
         const fmtN = (v) => (econ ? econ.fmt(v) : String(v));
@@ -722,7 +722,7 @@
           const b = this.el('button', 'chip-btn' + (c === 500 ? ' active' : ''));
           b.type = 'button';
           b.innerHTML = `<span class="chip-v">🪙 ${fmtN(c)}</span>` +
-            `<span class="chip-sub">胜 +${fmtN(c * 4)} · 负 −${fmtN(c * 4)}</span>`;
+            `<span class="chip-sub">本局底注 ${fmtN(c)} · 输赢即时到账</span>`;
           b.addEventListener('click', () => {
             this.sound.tick();
             if (econ) econ.setChip(c);
@@ -862,6 +862,20 @@
         });
         node.appendChild(scoreBox);
 
+        // 局内外共享：本局代币实时结算
+        const econ = global.MJEconomy;
+        if (econ && data.coinDelta !== undefined && data.coinDelta !== null) {
+          const bal = data.coinBalance != null ? data.coinBalance : econ.getCoins();
+          const line = this.el('div', 'coin-delta ' + (data.coinDelta >= 0 ? 'gain' : 'loss'));
+          line.textContent = (data.coinDelta >= 0 ? '代币 + ' : '代币 − ') + econ.fmt(Math.abs(data.coinDelta)) +
+            ' · 余额 ' + econ.fmt(bal);
+          node.appendChild(line);
+          if (data.coinRelief > 0) {
+            const tip = this.el('div', 'coin-relief', '破产补助 + ' + econ.fmt(data.coinRelief) + '，明天继续来把麻将！');
+            node.appendChild(tip);
+          }
+        }
+
         const btns = this.el('div', 'modal-btns');
         const ok = this.el('button', 'act-btn', '继 续');
         ok.type = 'button';
@@ -875,13 +889,24 @@
       });
     }
 
-    /** 流局弹窗 */
-    showDrawGame(tenpaiList) {
+    /** 流局弹窗 (coin: 本局代币结算信息，可为 null) */
+    showDrawGame(tenpaiList, coin) {
       return new Promise(resolve => {
         const node = document.createDocumentFragment();
         node.appendChild(this.el('h2', '', '荒 庄'));
         const names = tenpaiList.map(i => SEAT_INFO[i].name).join('、');
         node.appendChild(this.el('div', 'subtitle', tenpaiList.length ? `听牌：${names} (不结算金币)` : '无人听牌'));
+        const econ = global.MJEconomy;
+        if (econ && coin) {
+          const line = this.el('div', 'coin-delta ' + (coin.delta >= 0 ? 'gain' : 'loss'));
+          line.textContent = (coin.delta >= 0 ? '代币 + ' : '代币 − ') + econ.fmt(Math.abs(coin.delta)) +
+            ' · 余额 ' + econ.fmt(coin.balance);
+          node.appendChild(line);
+          if (coin.relief > 0) {
+            const tip = this.el('div', 'coin-relief', '破产补助 + ' + econ.fmt(coin.relief) + '，明天继续来把麻将！');
+            node.appendChild(tip);
+          }
+        }
         const btns = this.el('div', 'modal-btns');
         const ok = this.el('button', 'act-btn', '继 续');
         ok.type = 'button';
@@ -911,19 +936,12 @@
             <span class="sc">${fmtCoins(p.score)}</span>`;
           node.appendChild(row);
         });
-        /* 局外代币结算：名次系数 × 本场筹码（economy.js 缺失时静默跳过） */
+        /* 局内外共享：代币已在每局实时结算，这里只展示余额与名次 */
         const econ = global.MJEconomy;
-        if (econ && playerRank > 0) {
-          const delta = econ.settleMatch(playerRank, econ.getChip());
-          const relief = econ.maybeRelief();
-          const line = this.el('div', 'coin-delta ' + (delta >= 0 ? 'gain' : 'loss'));
-          line.textContent = (delta >= 0 ? '代币 + ' : '代币 − ') + econ.fmt(Math.abs(delta)) +
-            '（筹码 ' + econ.fmt(econ.getChip()) + ' · 第 ' + playerRank + ' 名）· 余额 ' + econ.fmt(econ.getCoins());
+        if (econ) {
+          const line = this.el('div', 'coin-delta',
+            '代币余额 ' + econ.fmt(econ.getCoins()) + '（每局输赢已实时计入 · 名次不影响代币）');
           node.appendChild(line);
-          if (relief > 0) {
-            const tip = this.el('div', 'coin-relief', '破产补助 + ' + econ.fmt(relief) + '，明天继续来把麻将！');
-            node.appendChild(tip);
-          }
         }
         const btns = this.el('div', 'modal-btns');
         const again = this.el('button', 'act-btn', '再 来 一 局');
@@ -969,11 +987,11 @@
         </ul>
         <h3>金币结算</h3>
         <ul>
-          <li>开局每人 <b>${fmtCoins(E.START_SCORE || 0)}</b> 金币，底注 <b>${fmtCoins(E.BASE_BET || 0)}</b> 金币。</li>
+          <li>开局每人 <b>${fmtCoins(E.START_SCORE || 0)}</b> 金币；每次开小局拿到牌后先选<b>筹码</b> (100 / 500 / 1500)，筹码即<b>本局底注</b>。</li>
           <li>不同牌型倍率不同，<b>最终倍率 = 各倍率之积</b> (封顶 ×${E.MULT_CAP || 0})，按高点法择优结算。</li>
           <li>点炮：放炮者独付「底注 × 倍率」；自摸：三家各付「底注 × 倍率 ÷ 2」，赢家共得三份。</li>
-          <li>暗杠每家付 ${fmtCoins((E.KONG_COIN || {}).concealed || 0)}，明杠 / 加杠每家付 ${fmtCoins((E.KONG_COIN || {}).open || 0)}。</li>
-          <li>庄家和牌或荒庄听牌则连庄，否则下家坐庄；东一局至南四局共 8 局后总结算。</li>
+          <li>暗杠每家付「底注 × 1」，明杠 / 加杠每家付「底注 × 0.5」。</li>
+          <li>玩家的金币输赢<b>实时计入局外代币余额</b> (局内外共享)；庄家和牌或荒庄听牌则连庄，东一局至南四局共 8 局后总结算，名次仅作展示不影响代币。</li>
         </ul>
         <h3>赔率表</h3>
         <div class="odds-hint">同一手牌可叠加多个牌型，倍率相乘。</div>

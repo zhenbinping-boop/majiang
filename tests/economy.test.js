@@ -1,6 +1,6 @@
 /**
  * tests/economy.test.js — 局外代币经济模块专项验证
- * 覆盖：50 万初始资金、筹码选择、名次结算、皮肤解锁/余额不足、破产补助每日一次
+ * 覆盖：50 万初始资金、筹码选择、每局实时结算（直连钱包）、皮肤解锁/余额不足、破产补助每日一次
  */
 const path = require('path');
 const fs = require('fs');
@@ -40,29 +40,20 @@ ok(E.setChip(9999) === 1500, '非法筹码被拒绝，保持 1500');
 E.setChip(100);
 ok(E.getChip() === 100, '选小筹 100');
 
-console.log('== 名次结算（筹码 100）==');
-let d = E.settleMatch(1);
-ok(d === 400 && E.getCoins() === 500400, '第 1 名 +400（实际 ' + d + '）');
-d = E.settleMatch(4);
-ok(d === -400 && E.getCoins() === 500000, '第 4 名 −400');
-d = E.settleMatch(2);
-ok(d === 100, '第 2 名 +100');
-d = E.settleMatch(3);
-ok(d === -200, '第 3 名 −200');
-d = E.settleMatch(9);
-ok(d === 0, '非法名次返回 0 变动');
-
-console.log('== 名次结算（显式传筹码 1500，不改默认）==');
-d = E.settleMatch(1, 1500);
-ok(d === 6000, '传参筹码 1500 → 第 1 名 +6,000（实际 ' + d + '）');
-ok(E.getChip() === 100, '传参不改变当前选中筹码');
-d = E.settleMatch(4, 1500);
-ok(d === -6000 && E.getCoins() === 499900, '传参筹码 1500 → 第 4 名 −6,000');
+console.log('== 每局实时结算（局内外共享，直连钱包）==');
+ok(E.settleMatch === undefined, '名次结算接口已移除（名次不影响代币）');
+let d = E.addCoins(18000);   // 筹码 1500 清一色自摸一例
+ok(d === 518000, '赢 18,000 实时入账（实际 ' + d + '）');
+d = E.addCoins(-23000);      // 点炮大番一例
+ok(d === 495000, '输 23,000 实时扣款（实际 ' + d + '）');
+d = E.addCoins(-999999);
+ok(d === 0, '输到下限截断为 0');
+E.addCoins(495000);          // 还原到 495,000，供皮肤用例使用
 
 console.log('== 皮肤解锁 ==');
 let r = E.unlockSkin('ocean');
-ok(r.ok && E.isUnlocked('ocean'), '50 万资金解锁 8,000 鎏金成功');
-ok(E.getCoins() === 491900, '扣款后余额 491,900（实际 ' + E.getCoins() + '）');
+ok(r.ok && E.isUnlocked('ocean'), '49.5 万资金解锁 8,000 鎏金成功');
+ok(E.getCoins() === 487000, '扣款后余额 487,000（实际 ' + E.getCoins() + '）');
 r = E.unlockSkin('ocean');
 ok(!r.ok && r.reason === 'owned', '重复解锁 → owned');
 r = E.unlockSkin('sandal');
@@ -82,8 +73,7 @@ E.addCoins(-19000); // → 1,000 < 2,000
 ok(E.maybeRelief() === 0, '低于阈值但今日已领 → 0');
 
 console.log('== 持久化 ==');
-ok(store.get('mj-coins') === '1000', '余额已写回存储');
-ok(JSON.parse(store.get('mj-unlocked')).indexOf('ocean') >= 0, '解锁清单已持久化');
+ok(store.get('mj-coins') === '1000', '余额已写回存储');ok(JSON.parse(store.get('mj-unlocked')).indexOf('ocean') >= 0, '解锁清单已持久化');
 ok(store.get('mj-stake') === undefined, '旧局级键已不再写入');
 
 console.log('\n========== 通过 ' + pass + ' / 失败 ' + fail + ' ==========');

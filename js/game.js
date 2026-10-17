@@ -28,7 +28,6 @@
     async start() {
       const runId = ++this._runId;
       this.running = true;
-      this._chipAsked = false;   // 每场（东1~南4）拿牌后选一次筹码
       this.bindTopbar();
       this.syncEconomyChip();
       this.validateThemeUnlocked();
@@ -37,6 +36,18 @@
     }
 
     /* ---------- 局外代币 ---------- */
+
+    /**
+     * 局内外共享：把玩家本小局的金币变动实时写入局外钱包。
+     * @param {number} delta 本局金币变动 (正=赢 负=输)
+     * @returns {{delta:number, balance:number}|null} econ 缺失时返回 null
+     */
+    syncWallet(delta) {
+      const econ = global.MJEconomy;
+      if (!econ) return null;
+      const balance = econ.addCoins(delta);
+      return { delta, balance };
+    }
 
     /** 顶栏同步：代币余额（筹码改为拿牌后弹窗选择，不再有局级徽标） */
     syncEconomyChip() {
@@ -103,7 +114,7 @@
         list.appendChild(row);
       });
       node.appendChild(list);
-      const foot = ui.el('div', 'skin-foot', '代币来自每场总结算 · 名次越高赢得越多');
+      const foot = ui.el('div', 'skin-foot', '代币来自每局输赢实时结算 · 筹码越大输赢越大');
       node.appendChild(foot);
       const btns = ui.el('div', 'modal-btns');
       const close = ui.el('button', 'act-btn pass', '关 闭');
@@ -193,12 +204,24 @@
       while (this.isAlive(runId)) {
         const result = await this.playHand(runId);
         if (!this.isAlive(runId) || !result) return;
+        // 局内外共享结算：玩家本局金币变动实时写入局外钱包
+        const myDelta = this.engine.players[0].score - (this._handScore0 || 0);
+        const coin = this.syncWallet(myDelta);
+        if (coin) {
+          const relief = global.MJEconomy.maybeRelief();
+          coin.relief = relief > 0 ? relief : 0;
+        }
         if (result.isDraw) {
           this.engine.updateTenpaiFlags();
           const tenpai = this.engine.settleDraw();
           this.ui.renderAll();
-          await this.ui.showDrawGame(tenpai);
+          await this.ui.showDrawGame(tenpai, coin);
         } else {
+          if (result.settleData) {
+            result.settleData.coinDelta = coin ? coin.delta : myDelta;
+            result.settleData.coinBalance = coin ? coin.balance : null;
+            result.settleData.coinRelief = coin ? coin.relief : 0;
+          }
           await this.ui.showSettlement(result.settleData);
         }
         if (!this.isAlive(runId)) return;
@@ -221,12 +244,11 @@
     async playHand(runId) {
       await this.ui.animateDeal();
       if (!this.isAlive(runId)) return null;
-      /* 拿到牌后选择本场筹码（每场一次； economically 即选底分） */
-      if (!this._chipAsked) {
-        this._chipAsked = true;
-        await this.ui.askChip();
-        if (!this.isAlive(runId)) return null;
-      }
+      /* 每次开小局拿到牌后先选筹码 (筹码即本局底注，局内外共享) */
+      const chip = await this.ui.askChip();
+      if (!this.isAlive(runId)) return null;
+      this.engine.setBaseBet(chip || 500);
+      this._handScore0 = this.engine.players[0].score;  // 本局起点，用于钱包差值结算
       let guard = 0;
       let justClaimedPongOrChi = false;
       while (this.isAlive(runId) && guard++ < 400) {

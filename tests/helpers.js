@@ -3,7 +3,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * 关闭「拿牌后选择筹码」弹窗（选 500 档）。
- * 每场开局发牌后 playHand 会 await ui.askChip()，在手牌交互解锁之前
+ * 每次开小局拿到牌后 playHand 都会 await ui.askChip()，在手牌交互解锁之前
  * 必须先选筹码，否则 handClickResolve 永不就绪。
  * @param {import('puppeteer-core').Page} page
  * @param {number} [timeout] 等弹窗出现的超时

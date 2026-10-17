@@ -6,10 +6,11 @@
  *   数值仅存 localStorage，仅用于局内皮肤解锁与牌局体验。
  *
  * 结构：
- *   - 资金：初始 50 万代币（外置、可成长 —— 随每场输赢累积/消耗）。
- *   - 筹码：玩家拿牌后每场选择一次（100 / 500 / 1500），
- *     总结算按「名次系数 × 筹码」发放/扣取代币。
- *   - 名次系数：[+4, +1, -2, -4]（第 1~4 名），余额下限 0。
+ *   - 资金：初始 50 万代币（外置、可成长 —— 随每局输赢累积/消耗）。
+ *   - 筹码：每次开小局拿到牌后选择（100 / 500 / 1500），筹码即本局底注 ——
+ *     局内金币结算与局外代币共用同一套数值（局内外共享）。
+ *   - 实时结算：每小局结束按玩家本局金币变动直接写入钱包（赢钱 / 输钱即时到账），
+ *     名次只在总结算展示，不影响代币。
  *   - 破产补助：余额 < 2,000 时补到 20,000，每日一次（按本地日期）。
  *   - 皮肤解锁：竹韵翡翠免费；深海鎏金 8,000、紫檀玄金 15,000。
  */
@@ -20,11 +21,9 @@
   var LS_UNLOCKED = 'mj-unlocked';
   var LS_RELIEF = 'mj-relief';
 
-  /** 本场筹码选项（拿牌后弹窗选择，内存态、不持久化 —— 每场都要选） */
+  /** 本局筹码选项（拿到牌后弹窗选择，内存态、不持久化 —— 每小局都要选） */
   var CHIPS = [100, 500, 1500];
   var chip = 500;
-  /** 名次 1~4 → 代币系数 ×筹码 */
-  var RANK_DELTAS = [4, 1, -2, -4];
   var START_COINS = 500000;
   var RELIEF_BELOW = 2000;
   var RELIEF_TO = 20000;
@@ -63,30 +62,13 @@
     return coins;
   }
 
-  /* ---------- 筹码（每场开打前选一次，内存态） ---------- */
+  /* ---------- 筹码（每小局拿到牌后选一次，内存态；筹码即本局底注） ---------- */
 
   function getChip() { return chip; }
   function setChip(v) {
     v = Math.round(v);
     if (CHIPS.indexOf(v) >= 0) chip = v;
     return chip;
-  }
-
-  /* ---------- 总结算：名次 → 代币 ---------- */
-
-  /**
-   * 整场（东1~南4）结束后按玩家名次结算代币。
-   * @param {number} rank 玩家名次 1~4
-   * @param {number} [chipVal] 本场筹码（缺省用最近一次选择的）
-   * @returns {number} 实际变动（含 0 下限截断），供结算弹窗展示
-   */
-  function settleMatch(rank, chipVal) {
-    if (!(rank >= 1 && rank <= 4)) return 0;
-    var base = CHIPS.indexOf(chipVal) >= 0 ? chipVal : chip;
-    var d = RANK_DELTAS[rank - 1] * base;
-    var before = coins;
-    addCoins(d);
-    return coins - before;
   }
 
   /* ---------- 破产补助 ---------- */
@@ -147,11 +129,10 @@
   global.MJEconomy = {
     CHIPS: CHIPS,
     SKINS: SKINS, SKIN_ORDER: SKIN_ORDER,
-    RANK_DELTAS: RANK_DELTAS,
     START_COINS: START_COINS,
     getCoins: getCoins, addCoins: addCoins,
     getChip: getChip, setChip: setChip,
-    settleMatch: settleMatch, maybeRelief: maybeRelief,
+    maybeRelief: maybeRelief,
     ownedSkins: ownedSkins, isUnlocked: isUnlocked, unlockSkin: unlockSkin,
     renderCoins: renderCoins,
     fmt: fmt,

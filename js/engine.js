@@ -49,9 +49,9 @@
   const DESC_OF = {};
   FAN_MULT.forEach(f => { MULT_OF[f.name] = f.mult; DESC_OF[f.name] = f.desc; });
 
-  /** 金币取整 (向下取到 100 的整数倍，最低 100) */
+  /** 金币取整 (向下取到 10 的整数倍，最低 10；兼容小筹码底注) */
   function roundCoins(n) {
-    return Math.max(COIN_UNIT, Math.floor(n / COIN_UNIT) * COIN_UNIT);
+    return Math.max(10, Math.floor(n / 10) * 10);
   }
 
   /* ==================== 基础工具 ==================== */
@@ -395,9 +395,10 @@
     totalMult = Math.round(totalMult * 100) / 100;
 
     // 自摸三家各付一半 (含自摸加成)，点炮由放炮者独付
-    const perPayer = roundCoins(BASE_BET * totalMult * (selfDraw ? 0.5 : 1));
+    const baseBet = ctx.baseBet || BASE_BET;
+    const perPayer = roundCoins(baseBet * totalMult * (selfDraw ? 0.5 : 1));
     const gain = selfDraw ? perPayer * 3 : perPayer;
-    return { fans, totalMult, baseBet: BASE_BET, perPayer, gain, form, isSeven };
+    return { fans, totalMult, baseBet, perPayer, gain, form, isSeven };
   }
 
   /**
@@ -461,6 +462,14 @@
       this.honba = 0;      // 本场数
       this.matchOver = false;
       this.lastKongInfo = null;
+      this.baseBet = BASE_BET;   // 本局底注 = 所选筹码 (每小局由控制器 setBaseBet 设置)
+    }
+
+    /** 设置本局底注 (拿到牌后选完筹码调用) */
+    setBaseBet(v) {
+      v = Math.round(v);
+      if (v > 0) this.baseBet = v;
+      return this.baseBet;
     }
 
     /* ---- 事件 ---- */
@@ -704,6 +713,7 @@
       const ctx = {
         player: winner, winTile, selfDraw, rinshan, robKong, haitei,
         prevailingWind: this.prevailingWind,
+        baseBet: this.baseBet,
       };
       const result = evaluateFan(ctx);
       const payments = this.players.map(p => ({ player: p.id, delta: 0 }));
@@ -720,9 +730,9 @@
       return { result, payments, winTile };
     }
 
-    /* ---- 杠分即时结算 (金币) ---- */
+    /* ---- 杠分即时结算 (金币，随本局底注等比缩放) ---- */
     settleKongPoints(player, concealed) {
-      const per = concealed ? KONG_COIN.concealed : KONG_COIN.open;
+      const per = roundCoins(this.baseBet * (concealed ? 1 : 0.5));
       const payments = this.players.map(p => ({ player: p.id, delta: 0 }));
       this.players.forEach(p => { if (p.id !== player.id) payments[p.id].delta = -per; });
       payments[player.id].delta = per * 3;
