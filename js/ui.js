@@ -264,6 +264,109 @@
       }
     }
 
+    /* =============== 军师模式 (免费) =============== */
+
+    /** 读取本地偏好 (默认关) */
+    sageEnabled() {
+      if (this._sage === undefined) {
+        try { this._sage = localStorage.getItem('mj-sage') === '1'; }
+        catch (e) { this._sage = false; }
+      }
+      return this._sage;
+    }
+
+    /** 切换军师模式并持久化；返回新状态 */
+    toggleSage() {
+      this._sage = !this.sageEnabled();
+      try { localStorage.setItem('mj-sage', this._sage ? '1' : '0'); } catch (e) { /* ignore */ }
+      this.sound.tick();
+      if (this._sage) this.toast('军师模式开启 · 轮到你出牌时给建议');
+      this.syncSageBtn();
+      this.refreshSage();
+      return this._sage;
+    }
+
+    /** 顶栏按钮点亮态同步 */
+    syncSageBtn() {
+      const btn = this.$('btn-sage');
+      if (btn) btn.classList.toggle('on', this.sageEnabled());
+    }
+
+    /** 懒创建军师面板（挂在 #app 坐标系内，3D/DOM 两模式通用） */
+    _sageEl() {
+      let tip = this.$('sage-tip');
+      if (!tip) {
+        tip = this.el('div', 'sage-tip hidden');
+        tip.id = 'sage-tip';
+        const app = this.$('app') || document.getElementById('app');
+        if (app) app.appendChild(tip);
+      }
+      return tip;
+    }
+
+    /**
+     * 军师面板刷新：轮到我出牌（手牌满 14−3×副露）且军师开启时，
+     * 用 mjmath.analyzeHand 计算弃牌建议并展示；其余时刻隐藏。
+     * renderMyHand 末尾自动调用，切换开关时也会触发。
+     */
+    refreshSage() {
+      const tip = this._sageEl();
+      const p = this.engine && this.engine.players && this.engine.players[0];
+      const canAdvise = this.sageEnabled() && p && this.ctrl && this.ctrl.ai && global.MJMath
+        && this.engine.turn === 0
+        && p.hand.length === 14 - p.melds.length * 3;
+      if (!canAdvise) {
+        tip.classList.add('hidden');
+        this._sageAnalysis = null;
+        this._markSageBest(null);
+        return;
+      }
+      const ai = this.ctrl.ai;
+      const visible = ai.visibleCounts(p);
+      const opponents = [1, 2, 3].map(id => ({
+        discards: this.engine.players[id].discards,
+        threat: ai.threatLevel(this.engine.players[id]),
+      }));
+      const a = global.MJMath.analyzeHand({
+        hand: p.hand,
+        meldCount: p.melds.length,
+        visible,
+        opponents,
+        wallLeft: this.engine.wall.length + this.engine.dead.length,
+        prevailingWind: this.engine.prevailingWind || 0,
+        seatWind: p.wind || 0,
+      });
+      this._sageAnalysis = a;
+      if (!a || !a.best) { tip.classList.add('hidden'); this._markSageBest(null); return; }
+
+      const b = a.best;
+      const modeTxt = a.mode === 'defend' ? '他家做牌凶 · 优先安全牌'
+        : a.mode === 'attack' ? '进度好 · 最大进张进攻'
+        : '稳扎稳打 · 向听优先';
+      const alts = a.top.slice(1).map(c =>
+        `<span class="sage-alt">${MJ.tileFaceSVG(c.tile)}<i>${c.uke}张</i></span>`).join('');
+      tip.innerHTML =
+        `<span class="sage-badge">🧠 军师</span>` +
+        `<span class="sage-main"><span class="sage-svg">${MJ.tileFaceSVG(b.tile)}</span>` +
+        `<span class="sage-pick">打 ${MJ.tileName(b.tile)}</span></span>` +
+        `<span class="sage-meta">进张 ${b.kinds}种${b.uke}张 · 和率 ${Math.min(99, b.winRate * 100).toFixed(0)}% · ` +
+        `<b class="lv-${b.dangerLv.cls}">危险 ${b.dangerLv.label}</b> · ${modeTxt}</span>` +
+        (alts ? `<span class="sage-alts">${alts}</span>` : '');
+      tip.classList.remove('hidden');
+      this._markSageBest(b.tile);
+    }
+
+    /** DOM 模式给推荐牌描金环（3D 手牌由面板文字指示，不动场景） */
+    _markSageBest(tile) {
+      if (this.t3d) return;
+      const box = this.$('my-hand');
+      if (!box || !box.querySelectorAll) return;
+      const target = tile === null || tile === undefined ? null : String(tile);
+      for (const el of box.querySelectorAll('.tile')) {
+        el.classList.toggle('sage-best', target !== null && el.dataset && el.dataset.tile === target);
+      }
+    }
+
     /* =============== 整手渲染 =============== */
     renderAll() {
       this.renderTopbar();
@@ -364,6 +467,7 @@
         this.t3d.setSelected(-1);
         this.highlightSameTiles(null);
         this.refreshPassiveTingTip();
+        this.refreshSage();
         return;
       }
       const box = this.$('my-hand');
@@ -403,6 +507,7 @@
       this.selectedIdx = -1;
       this.highlightSameTiles(null);
       this.refreshPassiveTingTip();
+      this.refreshSage();
     }
 
     renderAISeat(pid) {
@@ -984,6 +1089,7 @@
           <li><b>杠</b>：手牌 4 张相同可暗杠；碰过后再摸到可加杠；他人打出第 4 张可明杠。杠后摸一张岭上牌，加杠可被抢杠。</li>
           <li><b>和</b>：摸到所需牌为自摸；他人打出所需牌为点炮。</li>
           <li><b>听牌辅助</b>：出牌时带「听」角标的牌打出即可听牌，悬停或选中手牌可实时查看所听牌张及牌桌同名牌高亮；支持方向键选牌、回车/空格出牌。</li>
+          <li><b>军师模式 🧠（免费）</b>：顶栏点开军师，每次轮到你出牌会给出建议——打哪张、真实进张几种种几张、和牌率、放炮危险度；他家明显做牌时会提示转防守。数字与 AI 同一套数学，开着玩就是上课。</li>
         </ul>
         <h3>金币结算</h3>
         <ul>

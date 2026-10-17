@@ -843,6 +843,74 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---- 军师模式浮条 (免费 · 🧠 开关)：左上角贴顶栏下方，
+     不占中央视线带 (听牌浮条/操作栏专用)，不遮牌河，纯展示不可点 ---- */
+.sage-tip {
+  position: absolute;
+  top: 52px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 5px 12px;
+  border-radius: 12px;
+  background: rgba(10, 16, 40, 0.93);
+  border: 1px solid rgba(216, 180, 108, 0.5);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5), 0 0 14px rgba(216, 180, 108, 0.16);
+  z-index: 36;
+  pointer-events: none;
+  max-width: min(72vw, 560px);
+  line-height: 1.35;
+}
+.sage-tip.hidden { display: none; }
+.sage-badge {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #1a1206;
+  background: linear-gradient(180deg, #ffd98a, #d8b46c);
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.sage-main { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.sage-svg { width: 19px; height: 26px; display: inline-block; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+.sage-svg svg { width: 100%; height: 100%; display: block; }
+.sage-pick { font-size: 13px; font-weight: 800; color: var(--gold-lt, #ffd98a); white-space: nowrap; }
+.sage-meta { font-size: 11px; color: rgba(245, 239, 221, 0.82); white-space: nowrap; }
+.sage-meta .lv-safe { color: #8fe3a0; }
+.sage-meta .lv-low { color: #b7e3a0; }
+.sage-meta .lv-mid { color: #ffd98a; }
+.sage-meta .lv-high { color: #ff9d9d; }
+.sage-alts { display: inline-flex; align-items: center; gap: 5px; }
+.sage-alt {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(255, 255, 255, 0.07);
+  padding: 2px 5px;
+  border-radius: 6px;
+  font-size: 10px;
+  color: rgba(245, 239, 221, 0.75);
+  font-style: normal;
+}
+.sage-alt svg { width: 12px; height: 16px; display: block; }
+.sage-alt i { font-style: normal; font-variant-numeric: tabular-nums; }
+/* 顶栏军师按钮点亮态 */
+.icon-btn.on {
+  background: rgba(216, 180, 108, 0.3);
+  box-shadow: 0 0 10px rgba(216, 180, 108, 0.45);
+}
+/* DOM 手牌：军师推荐牌描金环 */
+.tile.sage-best {
+  outline: 2px solid rgba(255, 217, 138, 0.95);
+  outline-offset: 1px;
+  box-shadow: 0 0 12px rgba(255, 217, 138, 0.5);
+  border-radius: 6px;
+}
+
+
 /* ---- 手牌牌托 ---- */
 .hand {
   display: flex; justify-content: center; align-items: flex-end;

@@ -149,6 +149,11 @@
         if (!ui.sound.muted) ui.sound.tick();
       });
       ui.$('btn-rules').addEventListener('click', () => ui.showRules());
+      const sageBtn = ui.$('btn-sage');
+      if (sageBtn) {
+        ui.syncSageBtn();
+        sageBtn.addEventListener('click', () => ui.toggleSage());
+      }
       const themeBtn = ui.$('btn-theme');
       if (themeBtn) {
         themeBtn.addEventListener('click', () => {
